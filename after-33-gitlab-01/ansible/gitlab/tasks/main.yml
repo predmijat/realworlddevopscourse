@@ -1,0 +1,40 @@
+- name: services directory
+  ansible.builtin.file:
+    path: /root/services/
+    state: directory
+    mode: '700'
+
+- name: copy
+  ansible.builtin.copy:
+    src: gitlab
+    dest: /root/services/
+    owner: root
+    group: root
+    mode: '700'
+
+- name: backups directory 'app'
+  ansible.builtin.file:
+    path: /mnt/storage/backups/gitlab/app
+    owner: 998
+    group: 998
+    mode: '755'
+    state: directory
+
+- name: backups directory 'secrets'
+  ansible.builtin.file:
+    path: /mnt/storage/backups/gitlab/secrets
+    owner: root
+    group: root
+    mode: '700'
+    state: directory
+
+- name: run gitlab
+  ansible.builtin.shell: "cd /root/services/gitlab && docker-compose down && docker-compose up -d"
+
+- name: add gitlab backup script to crontab
+  ansible.builtin.cron:
+    name: backup gitlab
+    minute: "16"
+    hour: "2"
+    user: root
+    job: "/root/services/gitlab/backup.sh > /dev/null 2>&1"

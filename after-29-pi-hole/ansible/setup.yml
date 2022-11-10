@@ -1,0 +1,13 @@
+- hosts: main
+  roles:
+    # - hostname
+    # - essentials
+    # - security
+    # - sysctl
+    # - certbot
+    # - wireguard
+    # - docker
+    # - mariadb
+    # - lxc
+    # - traefik
+    - pi-hole

@@ -1,0 +1,17 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes   # equivalent to 'pacman -Sy'
+    name:
+      - gitlab-runner
+    state: present
+
+- name: add gitlab-runner to docker group
+  ansible.builtin.user:
+    name: gitlab-runner
+    groups: docker
+
+- name: ensure runner is started and enabled at boot
+  ansible.builtin.systemd:
+    name: gitlab-runner
+    state: started
+    enabled: yes

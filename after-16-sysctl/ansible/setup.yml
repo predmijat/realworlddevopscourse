@@ -1,0 +1,6 @@
+- hosts: main
+  roles:
+    # - hostname
+    # - essentials
+    # - security
+    - sysctl

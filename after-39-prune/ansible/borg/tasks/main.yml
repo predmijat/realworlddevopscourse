@@ -1,0 +1,64 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes
+    name:
+      - borg
+      - borgmatic
+      - python-llfuse
+    state: present
+
+- name: borgmatic directory
+  ansible.builtin.file:
+    path: /etc/borgmatic
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: config.yaml
+  ansible.builtin.copy:
+    src: files/config.yaml
+    dest: /etc/borgmatic/config.yaml
+    owner: root
+    group: root
+    mode: '600'
+
+- name: before.sh
+  ansible.builtin.copy:
+    src: files/before.sh
+    dest: /etc/borgmatic/before.sh
+    owner: root
+    group: root
+    mode: '700'
+
+- name: after.sh
+  ansible.builtin.copy:
+    src: files/after.sh
+    dest: /etc/borgmatic/after.sh
+    owner: root
+    group: root
+    mode: '700'
+
+- name: error.sh
+  ansible.builtin.copy:
+    src: files/error.sh
+    dest: /etc/borgmatic/error.sh
+    owner: root
+    group: root
+    mode: '700'
+
+- name: .env
+  ansible.builtin.copy:
+    src: files/.env
+    dest: /etc/borgmatic/.env
+    owner: root
+    group: root
+    mode: '600'
+
+- name: add borgmatic backup to crontab
+  ansible.builtin.cron:
+    name: borgmatic backup
+    minute: "01"
+    hour: "5"
+    user: root
+    job: "/usr/bin/borgmatic --syslog-verbosity 1 > /dev/null 2>&1"

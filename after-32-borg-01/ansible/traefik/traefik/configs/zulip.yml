@@ -1,0 +1,24 @@
+http:
+  routers:
+    zulip:
+      rule: Host(`zulip.do-p.com`)
+      tls:
+        certresolver:
+          letsencrypt
+      service: zulip
+      entryPoints:
+        - https
+      middlewares:
+        - zulip-whitelist
+
+  middlewares:
+    zulip-whitelist:
+      ipWhiteList:
+        sourceRange:
+          - "10.100.94.1/24"
+
+  services:
+    zulip:
+      loadBalancer:
+        servers:
+          - url: https://10.100.100.12

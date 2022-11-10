@@ -1,0 +1,50 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes   # equivalent to 'pacman -Sy'
+    name:
+      - base-devel      # "group" - set of packages used for compiling
+      - bat             # 'cat' replacement written in rust
+      - fd              # 'find' replacement written in rust
+      - fzf             # a command line fuzzy finder
+      - git             # scm
+      - htop            # interactive system monitor
+      - iotop           # disk and IO monitoring
+      - lm_sensors      # provides tools and drivers for monitoring temperatures, voltage, etc.
+      - man-db          # manual pages: https://wiki.archlinux.org/title/Man_page
+      - man-pages       # manual pages: https://wiki.archlinux.org/title/Man_page
+      - p7zip           # command line port of 7-Zip
+      - pacman-contrib  # pacman tools
+      - plocate         # unix tool for finding files quickly
+      - ripgrep         # grep replacement writte in rust
+      - smartmontools   # provides disk health status
+      - sudo            # run commands as root or another user
+      - zsh             # unix shell, alternative to bash
+    state: present
+
+- name: ensure plocate-updatedb.timer is started and enabled at boot
+  ansible.builtin.systemd:
+    name: plocate-updatedb.timer
+    state: started
+    enabled: yes
+
+- name: symlink vi
+  ansible.builtin.file:
+    src: /usr/bin/vim
+    dest: /usr/bin/vi
+    state: link
+
+- name: scripts directory
+  ansible.builtin.file:
+    path: /root/scripts
+    state: directory
+    owner: root
+    group: root
+    mode: '755'
+
+- name: update pacman mirrors script
+  ansible.builtin.copy:
+    src: files/pacman-new-mirrorlist.sh
+    dest: /root/scripts/pacman-new-mirrorlist.sh
+    owner: root
+    group: root
+    mode: '700'

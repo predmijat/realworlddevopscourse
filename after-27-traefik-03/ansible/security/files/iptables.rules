@@ -1,0 +1,46 @@
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+# Any network packet that comes in
+# and has VPS' public IP as its destination
+# and is trying to connect to Dovecot (143) or Postfix (25, 587)
+# route it to the iRedMail LXC.
+# I'm using only IMAP STARTTLS (143) and SMTP STARTTLS (587),
+# but you can add POP3 and/or SSL variant if you want.
+# Check https://docs.iredmail.org/network.ports.html for details, but
+# ignore 80/443 - only HTTP(S) entrypoint will be on the VPS (Traefik)
+-A PREROUTING -p tcp -m tcp -d 172.105.75.112 --dport 25 -j DNAT --to-destination 10.100.100.11:25
+-A PREROUTING -p tcp -m tcp -d 172.105.75.112 --dport 143 -j DNAT --to-destination 10.100.100.11:143
+-A PREROUTING -p tcp -m tcp -d 172.105.75.112 --dport 587 -j DNAT --to-destination 10.100.100.11:587
+# When network packets are coming from the internal network,
+# send it directly to the LXC.
+-A OUTPUT -d 172.105.75.112 -p tcp -m tcp --dport 143 -j DNAT --to-destination 10.100.100.11:143
+-A OUTPUT -d 172.105.75.112 -p tcp -m tcp --dport 587 -j DNAT --to-destination 10.100.100.11:587
+-A POSTROUTING -s 10.100.94.0/24 -o eth0 -j MASQUERADE
+COMMIT
+
+*filter
+:INPUT DROP [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+# If you have static IP, you can use this rule
+# -A INPUT -s $your_static_ip_if_you_have_one/32 -j ACCEPT
+
+# If you don't have static IP, use this
+# to access port 44422
+-A INPUT -i eth0 -p tcp --dport 44422 -j ACCEPT
+-A INPUT -i eth0 -p udp --dport 9473 -j ACCEPT
+
+# WireGuard clients
+-A INPUT -s 10.100.94.11/32 -j ACCEPT
+-A INPUT -s 10.100.94.12/32 -j ACCEPT
+
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p tcp -j REJECT --reject-with tcp-reset
+-A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
+-A INPUT -j REJECT --reject-with icmp-proto-unreachable
+COMMIT

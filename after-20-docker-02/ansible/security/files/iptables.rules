@@ -1,0 +1,31 @@
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A POSTROUTING -s 10.100.94.0/24 -o eth0 -j MASQUERADE
+COMMIT
+
+*filter
+:INPUT DROP [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+# If you have static IP, you can use this rule
+# -A INPUT -s $your_static_ip_if_you_have_one/32 -j ACCEPT
+
+# If you don't have static IP, use this
+# to access port 44422
+-A INPUT -i eth0 -p tcp --dport 44422 -j ACCEPT
+-A INPUT -i eth0 -p udp --dport 9473 -j ACCEPT
+
+# WireGuard clients
+-A INPUT -s 10.100.94.11/32 -j ACCEPT
+-A INPUT -s 10.100.94.12/32 -j ACCEPT
+
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p tcp -j REJECT --reject-with tcp-reset
+-A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
+-A INPUT -j REJECT --reject-with icmp-proto-unreachable
+COMMIT

@@ -1,0 +1,20 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes
+    name: wireguard-tools
+    state: present
+
+- name: wg-do-p
+  ansible.builtin.copy:
+    src: files/wg-do-p.conf
+    dest: /etc/wireguard/wg-do-p.conf
+    owner: root
+    group: root
+    mode: '600'
+  notify: restart wg-do-p
+
+- name: ensure wg-quick@wg-do-p.service is started and enabled at boot
+  ansible.builtin.systemd:
+    name: wg-quick@wg-do-p.service
+    state: started
+    enabled: yes

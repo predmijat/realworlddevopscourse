@@ -1,0 +1,14 @@
+- name: set hostname
+  ansible.builtin.hostname:
+    name: vps.do-p.com
+    use: systemd
+
+- name: localhost
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: 127.0.0.1 localhost.localdomain localhost
+
+- name: vps.do-p.com
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: 172.105.75.112 vps.do-p.com vps

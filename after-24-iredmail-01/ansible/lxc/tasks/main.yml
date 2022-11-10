@@ -1,0 +1,52 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes
+    name:
+      - lxc
+      - arch-install-scripts
+    state: present
+
+- name: default.conf
+  ansible.builtin.copy:
+    src: files/default.conf
+    dest: /etc/lxc/default.conf
+    owner: root
+    group: root
+    mode: '644'
+
+- name: backups directory
+  ansible.builtin.file:
+    path: /mnt/storage/backups/lxc
+    owner: root
+    group: root
+    mode: '700'
+    state: directory
+
+- name: backup script for lxc mail.do-p.com
+  ansible.builtin.copy:
+    src: files/lxc-backup-mail-do-p-com.sh
+    dest: /root/scripts
+    owner: root
+    group: root
+    mode: '700'
+
+- name: .env-lxc-backups
+  ansible.builtin.copy:
+    src: files/.env-lxc-backups
+    dest: /root/scripts
+    owner: root
+    group: root
+    mode: '600'
+
+- name: add backup script for lxc mail.do-p.com to cron
+  ansible.builtin.cron:
+    name: lxc mail.do-p.com backup
+    minute: "01"
+    hour: "1"
+    user: root
+    job: "/root/scripts/lxc-backup-mail-do-p-com.sh > /dev/null 2>&1"
+
+- name: ensure lxc mail.do-p.com is enabled at boot
+  ansible.builtin.systemd:
+    name: lxc@mail.do-p.com
+    enabled: yes

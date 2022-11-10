@@ -1,0 +1,10 @@
+DOMAIN: do-p.com
+IP: 172.105.75.112
+FQDN: vps.do-p.com
+Host Bridge network: 10.100.100.1/24
+Additional loopback address: 10.36.7.11/32
+WireGuard IP range: 10.100.94.1/24
+WireGuard endpoint: 172.105.75.112:9473
+WireGuard client (laptop): 10.100.94.11/32
+WireGuard client (phone): 10.100.94.12/32
+LXC iRedMail IP: 10.100.100.11

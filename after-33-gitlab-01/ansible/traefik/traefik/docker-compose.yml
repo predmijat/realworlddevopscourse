@@ -1,0 +1,59 @@
+services:
+  traefik:
+    container_name: ${container_name}
+    hostname: ${hostname}
+    image: ${docker_image}:${docker_image_tag}
+    restart: unless-stopped
+    command:
+      - "--log.level=ERROR"
+      - "--accesslog=true"
+      - "--serverstransport.insecureskipverify=true"
+
+      - "--api=true"
+      - "--api.dashboard=true"
+      - "--entrypoints.http.address=:80"
+      - "--entrypoints.https.address=:443"
+
+      - "--providers.docker=true"
+      - "--providers.docker.network=web"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.directory=/configs/"
+      - "--providers.file.watch=true"
+
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http"
+      - "--certificatesresolvers.letsencrypt.acme.email=${letsencrypt_email}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=acme.json"
+
+      - "--global.sendAnonymousUsage=false"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./acme.json:/acme.json"
+      - "./configs/:/configs/"
+    networks:
+      - web
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${service}.rule=Host(`${hostname}`)"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+      - "traefik.http.routers.redirects.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirects.entrypoints=http"
+      - "traefik.http.routers.redirects.middlewares=redirect-to-https"
+      - "traefik.http.routers.${service}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${service}.service=api@internal"
+      - "traefik.http.routers.${service}.middlewares=${service}-whitelist,${service}-auth"
+      - "traefik.http.middlewares.${service}-whitelist.ipwhitelist.sourcerange=${ip_whitelist}"
+      - "traefik.http.middlewares.${service}-auth.basicauth.users=${traefik_dashboard_username}:${traefik_dashboard_password}"
+
+networks:
+  web:
+    external: true

@@ -1,0 +1,40 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes
+    name:
+      - certbot
+      - certbot-dns-linode
+    state: present
+
+- name: certbot
+  ansible.builtin.copy:
+    src: certbot
+    dest: /root/
+    owner: root
+    group: root
+    mode: '700'
+
+- name: service
+  ansible.builtin.copy:
+    src: files/certbot.service
+    dest: /etc/systemd/system/certbot.service
+    owner: root
+    group: root
+    mode: '644'
+
+- name: timer
+  ansible.builtin.copy:
+    src: files/certbot.timer
+    dest: /etc/systemd/system/certbot.timer
+    owner: root
+    group: root
+    mode: '644'
+
+- name: ensure certbot.timer is started and enabled at boot
+  ansible.builtin.systemd:
+    name: certbot.timer
+    state: started
+    enabled: yes
+
+- name: run get-certs
+  command: "/root/certbot/get-certs.sh"

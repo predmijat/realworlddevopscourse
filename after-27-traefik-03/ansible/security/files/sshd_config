@@ -1,0 +1,11 @@
+Port 44422
+PermitRootLogin prohibit-password
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+UsePAM yes
+X11Forwarding yes
+X11UseLocalhost no
+PrintMotd no
+ClientAliveInterval 60
+Subsystem sftp /usr/lib/ssh/sftp-server

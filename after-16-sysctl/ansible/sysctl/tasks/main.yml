@@ -1,0 +1,9 @@
+- name: 99-sysctl.conf
+  ansible.builtin.copy:
+    src: files/99-sysctl.conf
+    dest: /etc/sysctl.d/99-sysctl.conf
+    owner: root
+    group: root
+    mode: '644'
+    backup: yes
+  notify: reload sysctl

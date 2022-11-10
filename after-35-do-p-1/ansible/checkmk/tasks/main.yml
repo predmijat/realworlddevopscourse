@@ -1,0 +1,31 @@
+- name:
+  ansible.builtin.file:
+    path: /root/services/
+    state: directory
+    mode: '700'
+
+- name: copy
+  ansible.builtin.copy:
+    src: checkmk
+    dest: /root/services/
+    owner: root
+    group: root
+    mode: '700'
+
+- name: run checkmk
+  ansible.builtin.shell: "cd /root/services/checkmk && docker-compose down && docker-compose up -d"
+
+- name: add backup checkmk script to crontab
+  ansible.builtin.cron:
+    name: backup checkmk
+    minute: "11"
+    hour: "2"
+    user: root
+    job: "/root/services/checkmk/backup.sh > /dev/null 2>&1"
+
+### for Docker monitoring
+### create two directories on the desired host
+# mkdir -p /usr/lib/check_mk_agent/plugins
+# mkdir -p /var/lib/check_mk_agent/
+### put mk_docker.py to the plugins directory
+# https://checkmk.do-p.com/cmk/check_mk/agents/plugins/mk_docker.py

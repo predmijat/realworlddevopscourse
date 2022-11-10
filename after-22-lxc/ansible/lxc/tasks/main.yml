@@ -1,0 +1,23 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes
+    name:
+      - lxc
+      - arch-install-scripts
+    state: present
+
+- name: default.conf
+  ansible.builtin.copy:
+    src: files/default.conf
+    dest: /etc/lxc/default.conf
+    owner: root
+    group: root
+    mode: '644'
+
+- name: backups directory
+  ansible.builtin.file:
+    path: /mnt/storage/backups/lxc
+    owner: root
+    group: root
+    mode: '700'
+    state: directory

@@ -1,0 +1,40 @@
+services:
+  pihole:
+    container_name: ${container_name}
+    hostname: ${hostname}
+    image: ${docker_image}:${docker_image_tag}
+    restart: unless-stopped
+    networks:
+      - web
+    ports:
+      - '${loopback_ip}:53:53/tcp'
+      - '${loopback_ip}:53:53/udp'
+      - '${loopback_ip}:67:67/udp'  # Only required if you are using Pi-hole as your DHCP server
+    volumes:
+      - ./etc-pihole/:/etc/pihole/
+      - ./etc-dnsmasqd/:/etc/dnsmasq.d/
+      - ./etc-hosts:/etc/hosts:ro
+    environment:
+      ServerIP: ${server_ip}
+      VIRTUAL_HOST: ${hostname}
+      PIHOLE_DNS_: ${pihole_dns}
+      WEBPASSWORD: ${web_password}
+      ADMIN_EMAIL: ${admin_email}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.${service}.rule=Host(`${hostname}`)"
+      - "traefik.http.routers.${service}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${service}.entrypoints=https"
+      - "traefik.http.services.${service}.loadbalancer.server.port=80"
+      - "traefik.http.routers.${service}.middlewares=${service}-whitelist"
+      - "traefik.http.middlewares.${service}-whitelist.ipwhitelist.sourcerange=${ip_whitelist}"
+
+networks:
+  web:
+    external: true

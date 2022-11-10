@@ -1,0 +1,26 @@
+# I'm recording these videos while 'docker-compose' is still a prefered version.
+# Soon, 'docker-compose' will be replaced with Compose V2.
+# Everything should be the same usage wise, but installation might be a bit different,
+# and command will not be 'docker-compose', but 'docker compose', without the '-'.
+#
+# Also, note that I'll be installing docker-compose in main.yml, using pacman.
+# This is an alternative way of installing it by downloading the latest version
+# released on GitHub.
+
+- name: register current docker-compose version
+  ansible.builtin.shell: docker-compose --version | awk '{print $NF}'
+  register: docker_compose_current_version
+
+- name: register latest version
+  ansible.builtin.shell: curl --silent "https://api.github.com/repos/docker/compose/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
+  args:
+    warn: false
+  register: docker_compose_version
+
+- name: install docker-compose
+  ansible.builtin.get_url:
+    url: https://github.com/docker/compose/releases/download/{{ docker_compose_version.stdout }}/docker-compose-Linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: '755'
+  when:
+    docker_compose_current_version.stdout != docker_compose_version.stdout

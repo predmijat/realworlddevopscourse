@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en-US">
+    <style>
+        html {
+            max-width: 70ch;
+            padding: calc(1vmin + .5rem);
+            margin-inline: auto;
+            font-size: clamp(1em, 0.909em + 0.45vmin, 1.25em);
+            font-family: monospace;
+        }
+        .div1 {
+            line-height: 1;
+            letter-spacing: -.1rem;
+        }
+        .blink {
+            -webkit-animation: blink 1s ease-in-out infinite alternate;
+            -moz-animation: blink 1s ease-in-out infinite alternate;
+            -ms-animation: blink 1s ease-in-out infinite alternate;
+            -o-animation: blink 1s ease-in-out infinite alternate;
+            animation: blink 1s ease-in-out infinite alternate;
+        }
+        @-webkit-keyframes blink { to { opacity: 0; } }
+        @-moz-keyframes blink { to { opacity: 0; } }
+        @-ms-keyframes blink { to { opacity: 0; } }
+        @-o-keyframes blink { to { opacity: 0; } }
+        @keyframes blink { to { opacity: 0; } }
+    </style>
+    <head>
+        <title>do-p.com</title>
+    </head>
+    <body>
+        <br>
+        <br>
+        <br>
+        <div class="blink" "tilt">
+        <pre>
+  __
+ /\ \
+ \_\ \    ___            _____
+ / _  \  / __ \  _______/\  __ \
+/\ \L\ \/\ \L\ \/\______\ \ \L\ \
+\ \_____\ \____/\/______/\ \  __/
+ \/____ /\/___/           \ \ \/
+                           \ \_\
+                            \/_/
+        </pre>
+        </div>
+        <div class="div1">
+        <p>This website is running inside its own Docker container,</p>
+        <p>behind a Traefik reverse proxy with Docker provider,</p>
+        <p>with automatic TLS certificate from Let's Encrypt,</p>
+        <p>deployed via GitLab CI/CD,</p>
+        <p>to a server managed with Ansible.</p>
+        </div>
+    </body>
+</html>

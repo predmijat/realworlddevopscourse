@@ -1,0 +1,21 @@
+- name: check for database user 'backup_script@localhost'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "localhost"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'backup_script@10.100.94.0/24'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "10.100.94.%"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true

@@ -1,0 +1,153 @@
+- name: check for database user 'backup_script@localhost'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "localhost"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'backup_script@10.100.94.0/24'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "10.100.94.%"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'backup_script@172.21.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "172.21.%.%"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'backup_script@172.22.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "172.22.%.%"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'backup_script@172.23.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "172.23.%.%"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'backup_script@172.24.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "172.24.%.%"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'backup_script@172.25.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: backup_script
+    password: "{{ mariadb_backup_script_password }}"
+    host: "172.25.%.%"
+    priv: 'backups.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'nextcloud@localhost'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: nextcloud
+    password: "{{ mariadb_nextcloud_password }}"
+    host: "localhost"
+    priv: 'nextcloud.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'nextcloud@10.100.94.0/24'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: nextcloud
+    password: "{{ mariadb_nextcloud_password }}"
+    host: "10.100.94.%"
+    priv: 'nextcloud.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'nextcloud@172.21.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: nextcloud
+    password: "{{ mariadb_nextcloud_password }}"
+    host: "172.21.%.%"
+    priv: 'nextcloud.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'nextcloud@172.22.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: nextcloud
+    password: "{{ mariadb_nextcloud_password }}"
+    host: "172.22.%.%"
+    priv: 'nextcloud.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'nextcloud@172.23.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: nextcloud
+    password: "{{ mariadb_nextcloud_password }}"
+    host: "172.23.%.%"
+    priv: 'nextcloud.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'nextcloud@172.24.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: nextcloud
+    password: "{{ mariadb_nextcloud_password }}"
+    host: "172.24.%.%"
+    priv: 'nextcloud.*:ALL'
+    state: present
+  no_log: true
+
+- name: check for database user 'nextcloud@172.25.0.0/16'
+  community.mysql.mysql_user:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name: nextcloud
+    password: "{{ mariadb_nextcloud_password }}"
+    host: "172.25.%.%"
+    priv: 'nextcloud.*:ALL'
+    state: present
+  no_log: true

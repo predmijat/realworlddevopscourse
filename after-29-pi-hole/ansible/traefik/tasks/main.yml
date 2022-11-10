@@ -1,0 +1,28 @@
+- name: services directory
+  ansible.builtin.file:
+    path: /root/services/
+    state: directory
+    mode: '700'
+
+- name: copy
+  ansible.builtin.copy:
+      src: traefik
+      dest: /root/services/
+      owner: root
+      group: root
+      mode: '700'
+
+- name: create docker network 'web'
+  community.general.docker_network:
+    name: web
+
+- name: acme.json
+  ansible.builtin.file:
+    path: /root/services/traefik/acme.json
+    owner: root
+    group: root
+    mode: '600'
+    state: touch
+
+- name: run traefik
+  ansible.builtin.shell: "cd /root/services/traefik && docker-compose down && docker-compose up -d"
