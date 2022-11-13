@@ -2,6 +2,7 @@
 
 if [ ! -f /etc/pacman.d/mirrorlist.pacnew ]; then
     echo "mirrorlist.pacnew not present, exiting..."
+    exit 1
 fi
 
 cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist-"$(date -Is)"
