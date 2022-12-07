@@ -2,7 +2,7 @@
   roles:
     # - hostname
     # - essentials
-    - security
+    # - security
     # - sysctl
     # - certbot
-    # - wireguard
+    - wireguard
