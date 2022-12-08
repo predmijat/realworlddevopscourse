@@ -7,3 +7,14 @@ WireGuard IP range: 10.100.94.1/24
 WireGuard endpoint: 172.105.75.112:9473
 WireGuard client (laptop): 10.100.94.11/32
 WireGuard client (phone): 10.100.94.12/32
+
+(umask 0077; wg genkey > do-p.key)
+(umask 0077; wg genkey > laptop.key)
+(umask 0077; wg genkey > phone.key)
+
+wg pubkey < do-p.key > do-p.pub
+wg pubkey < laptop.key > laptop.pub
+wg pubkey < phone.key > phone.pub
+
+(umask 0077; wg genpsk > do-p-laptop.psk)
+(umask 0077; wg genpsk > do-p-phone.psk)
