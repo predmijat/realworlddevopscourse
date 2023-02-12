@@ -1,0 +1,1011 @@
+# Welcome!
+
+## About me
+
+- My name is Predrag
+- Over 10 years of professional experience
+- Started as a System Administrator
+- Transitioned to DevOps
+
+## What Is And Isn't Covered
+
+✘ AWS, Azure, GCP, ...            ✘ Kubernetes
+
+---
+
+✔ **Ansible**                  ✔ **Traefik** with Docker and file providers
+
+✔ **Wireguard**             ✔ **Pi-hole**
+
+✔ **certbot**                  ✔ **Nextcloud**
+
+✔ **Docker and docker-compose**         ✔ **checkmk**
+
+✔ **iRedMail**              ✔ **Borg** with **borgmatic**
+
+✔ **Zulip**                     ✔ **GitLab** and **GitLab Runner**
+
+✔ **LXC (Linux Containers)**
+
+## Is This Course For You?
+
+- Not for complete beginners.
+- You need some experience with Linux, computer networks, DNS, CLI, etc.
+- I'll be explaining a lot of these concepts,
+
+  but it's not possible to cover everything in detail.
+
+- Willingness to learn and do your own research.
+
+##
+
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+
+**THANK YOU!**
+
+##
+
+## FIRST STEPS
+
+## What You Will Need
+
+1) **Domain name** with access to **DNS** settings.
+    - I'll buy one in the next video
+    - we'll use it to get free TLS certificates from Let's Encrypt via Traefik
+
+<br>
+
+2) **Server** - it doesn't matter if it's physical or VPS, but it must be **reachable via public IP**.
+    - I'll buy Linode VPS with Arch Linux
+    - other distributions possible, but some adjustments will be needed
+
+<br>
+
+3) macOS, Linux, or Windows machine
+
+##
+
+## Buying a Domain Name
+
+1) **Domain name**
+
+2) **DNS configuration**
+
+<br>
+
+- If you already have a domain name, skip this step.
+- If you don't, buy one from a domain registrar. My recommendation: [Namesilo](https://www.namesilo.com/register.php?rid=315b374pi) (affiliate link).
+- For DNS, you should use one of the providers which is [natively supported by certbot](https://certbot.eff.org/docs/using.html#dns-plugins).
+This is not a hard constraint, but it will make your life easier. More on this later.
+
+- I'll be using Linode DNS.
+- Use `whois` command to check domain availability.
+
+##
+
+## Server
+
+- [Linode account](https://www.linode.com/?r=6970095c5f0f69b7a1d6caaafe1746afeec15d4e) (affiliate link).
+
+- [SSH keys](https://wiki.archlinux.org/title/SSH_keys)
+
+- VPS with attached storage volume.
+  - Arch Linux
+  - Location close to you
+  - 'Linode 8GB'
+  - 20GiB Volume in the same location as VPS
+
+- SSH config
+
+<br>
+
+- Alternative: [Hetzner](https://hetzner.cloud/?ref=9iOtVNtvTW0s) (affiliate link).
+
+##
+
+## ANSIBLE
+
+## ANSIBLE
+
+- Open-source
+- Unix-like OS or Windows
+- Agentless
+- Minimal, consistent, secure, reliable (idempotent), easy to start with
+
+##
+
+## Installing and Configuring Ansible
+
+- Installing `Ansible` in `venv` via `pip`
+- Configuring `Ansible`
+  - `ansible.cfg`
+  - `hosts`
+  - setup.yml
+
+- Ansible playbook
+- Ansible roles
+
+##
+
+## ANSIBLE ROLES
+
+- Role accomplishes a certain task
+- Reusable
+- Ansible collections - playbooks, roles, modules, and plugins
+- Shareable (check [Ansible Galaxy](https://galaxy.ansible.com/))
+
+##
+
+## Hostname
+
+- Set VPS hostname
+
+<br>
+
+```
+hostname          # Role name
+└── tasks         # Tasks directory (must be named like this)
+    └── main.yml  # Main instructions for Ansible
+```
+
+<br>
+
+- `/etc/hosts`
+```
+  127.0.0.1 localhost.localdomain localhost
+  172.105.75.112 vps.do-p.com vps
+```
+
+##
+
+## DNS A records
+
+- DNS A record:  @       -> 172.105.75.112
+- DNS A record:  vps.do-p.com -> 172.105.75.112
+
+<br>
+<br>
+
+- Try resolving your hostname with `drill`/`dig`/`nslookup`/`host`/... commands
+
+##
+
+## Configuring DNS on Linux
+
+- [ArchWiki DNS](https://wiki.archlinux.org/title/Domain_name_resolution)
+- [Tailscale Blog](https://tailscale.com/blog/sisyphean-dns-client-linux/)
+- [ArchWiki systemd-resolved](https://wiki.archlinux.org/title/Systemd-resolved)
+
+##
+
+## Linux File Permissions
+
+- [File Permissions and Attributes](https://wiki.archlinux.org/title/File_permissions_and_attributes)
+- "text method" and "numeric method"
+```
+  d/-  rwx rwx rwx ... root root ...
+  ─┬─  ─┬─ ─┬─ ─┬─     ─┬── ──┬─
+   │    │   │   │       │     │
+   │    │   │   │     user  group
+   │    │   │   │
+   │    │   │   └── "other" read/write/execute
+   │    │   └────── group   read/write/execute
+   │    └────────── user    read/write/execute
+   │
+   └─────────────── directory (d) or file (-)
+
+  r w x      rwx r-x r--      -wx rw- --x      "text method"
+  4 2 1      421 4-1 4--      -21 42- --1
+              7   5   4        3   6   1       "numeric method"
+```
+- `chown` and `chmod` commands
+
+##
+
+## Essentials
+
+- Additional nameserver
+- Ansible's 'include_tasks'
+- Packages, cronie, network configuration
+
+<br>
+
+```
+essentials                        # Role name
+├── files                         # Files directory (must be named like this)
+│   ├── 01-custom.conf            # Drop-in for network interface
+│   ├── 11-lo.network             # Additional loopback address
+│   ├── br0.netdev                # br0 definition
+│   ├── br0.network               # br0 config
+│   └── pacman-new-mirrorlist.sh  # Script for updating pacman mirror list
+├── handlers                      # Handlers directory (must be named like this)
+│   └── main.yml                  # Triggered by tasks
+└── tasks                         # Tasks directory (must be named like this)
+    ├── br0.yml                   # Task for configuring bridge network
+    ├── cronie.yml                # Task for setting up cron
+    ├── loopback.yml              # Task for adding additional loopback address
+    ├── main.yml                  # Main instructions for Ansible
+    └── packages.yml              # Task for installing packages
+```
+
+##
+
+## Security
+
+- Customizing SSH daemon
+- Configuring iptables
+- Editing SSH config
+- LISH Console
+
+<br>
+
+```
+security                # Role name
+├── files               # Files directory (must be named like this)
+│   ├── iptables.rules  # iptables rules definitions
+│   └── sshd_config     # Customized SSH daemon config
+├── handlers            # Handlers directory (must be named like this)
+│   └── main.yml        # Handlers for restarting services
+└── tasks               # Tasks directory (must be named like this)
+    ├── iptables.yml    # Task for configuring iptables
+    ├── main.yml        # Main instructions for Ansible
+    └── sshd.yml        # Task for configuring SSH daemon
+```
+
+##
+
+## sysctl
+
+- net.ipv4.ip_forward
+- net.ipv4.ip_nonlocal_bind
+- fs.inotify.max_user_watches
+
+<br>
+
+```
+sysctl                  # Role name
+├── files               # Files directory (must be named like this)
+│   └── 99-sysctl.conf  # sysctl customization
+├── handlers            # Handlers directory (must be named like this)
+│   └── main.yml        # Handler for applying sysctl settings
+└── tasks               # Tasks directory (must be named like this)
+    └── main.yml        # Main instructions for Ansible
+```
+
+##
+
+## certbot
+
+- [certbot](https://certbot.eff.org/) is EFF's tool for obtaining TLS certificates from Let's Encrypt and (optionally) auto-enabling HTTPS on your server.
+- We will use it to obtain a wildcard TLS certificate, and we'll ignore the auto-enable part because we'll be using Traefik.
+
+- [ACME](https://en.wikipedia.org/wiki/Automated_Certificate_Management_Environment) is a communications protocol for automating interactions between certificate authorities and their users' web servers, allowing the automated deployment of public key infrastructure at very low cost.
+- `certbot` is not the only `ACME` client. There are many [others](https://letsencrypt.org/docs/client-options/), but `certbot` is the most popular one.
+
+**NOTE**: If you are doing a lot of testing/redeployments, use Let's Encrypt's [staging environment](https://letsencrypt.org/docs/staging-environment/)
+
+- In order to update Linode DNS via `certbot`, we need [Linode's Personal Access Token](https://cloud.linode.com/profile/tokens).
+
+## certbot
+
+<br>
+
+```
+certbot                   # Role name
+├── certbot               # certbot files
+│   ├── credentials.ini   # Linode credentials
+│   └── get-certs.sh      # Script for obtaining TLS certificates
+├── files                 # Files directory (must be named like this)
+│   ├── certbot.service   # systemd service
+│   └── certbot.timer     # systemd timer
+└── tasks                 # Tasks directory (must be named like this)
+    └── main.yml          # Main instructions for Ansible
+```
+
+<br>
+
+- Update `certbot/certbot/get-certs.sh` with your email and domain.
+- Update `certbot/certbot/credentials.ini` with Linode's Personal Access Token.
+
+##
+
+## WireGuard
+
+- [WireGuard](https://www.wireguard.com/) is an extremely simple yet fast and modern VPN that utilizes state-of-the-art cryptography.
+- [ArchWiki WireGuard](https://wiki.archlinux.org/title/WireGuard)
+
+```
+wireguard                # Role name
+├── files                # Files directory (must be named like this)
+│   ├── do-p-laptop.psk  # VPS <-> laptop preshared-key
+│   ├── do-p-phone.psk   # VPS <-> phone preshared-key
+│   ├── do-p.key         # VPS private key
+│   ├── do-p.pub         # VPS public key
+│   ├── laptop.conf      # laptop config
+│   ├── laptop-all.conf  # laptop config with 0.0.0.0/0
+│   ├── laptop.key       # laptop private key
+│   ├── laptop.pub       # laptop public key
+│   ├── phone.conf       # phone config
+│   ├── phone.key        # phone private key
+│   ├── phone.pub        # phone public key
+│   └── wg-do-p.conf     # WireGuard config (VPS)
+├── handlers             # Handlers directory (must be named like this)
+│   └── main.yml         # Handlers for restarting services
+└── tasks                # Tasks directory (must be named like this)
+    └── main.yml         # Main instructions for Ansible
+```
+
+## WireGuard
+
+- [CLI tools](https://www.wireguard.com/install/)
+
+```
+To generate private keys:
+(umask 0077; wg genkey > do-p.key)
+(umask 0077; wg genkey > laptop.key)
+(umask 0077; wg genkey > phone.key)
+
+To generate public keys:
+wg pubkey < do-p.key > do-p.pub
+wg pubkey < laptop.key > laptop.pub
+wg pubkey < phone.key > phone.pub
+
+To generate pre-shared keys:
+(umask 0077; wg genpsk > do-p-laptop.psk)
+(umask 0077; wg genpsk > do-p-phone.psk)
+
+---
+
+10.100.94.1/24   # VPS (server)
+10.100.94.11/24  # laptop
+10.100.94.12/24  # phone
+```
+
+## WireGuard
+
+- Client configs
+- iptables modification
+- `qrencode -t ansiutf8 -r phone.conf`
+
+##
+
+## Docker
+
+- Installing Docker daemon and docker-compose
+- Configuring Docker daemon
+- Setting up Docker systemd service
+
+<br>
+
+```
+docker                      # Role name
+├── files                   # Files directory (must be named like this)
+│   └── daemon.json         # Docker daemon customizations
+├── handlers                # Handlers directory (must be named like this)
+│   └── main.yml            # Handler for restarting Docker service
+└── tasks                   # Tasks directory (must be named like this)
+    ├── docker-compose.yml  # Task for installing docker-compose
+    └── main.yml            # Main instruction for Ansible
+```
+
+## Docker
+
+- Docker and firewall
+- Modification of 'security' role
+
+<br>
+<br>
+
+```
+docker run -d --name caddy -p 80:80 caddy
+            |     ├────┘    |  |  |   |  |
+            |     |         |  |  |   |  └── ':latest' is implied
+            |     |         |  |  |   └───── image name
+            |     |         |  |  └───────── port 80 inside the container
+            |     |         |  └──────────── port 80 on the host
+            |     |         └─────────────── 'publish', for mapping ports between host and container
+            |     └───────────────────────── name container will get
+            └─────────────────────────────── 'detach', run in background
+
+docker run --help for details
+```
+
+##
+
+## MariaDB
+
+- [MariaDB](https://wiki.archlinux.org/title/MariaDB) installation and initialization
+- Creating a user
+- Creating a database
+- [Ansible Vault](https://docs.ansible.com/ansible/latest/user_guide/vault.html)
+
+##
+
+## LXC
+
+- [LXC](https://linuxcontainers.org/) is an operating-system-level virtualization method for running multiple isolated Linux systems (containers) on a single control host (LXC host).
+- [ArchWiki](https://wiki.archlinux.org/index.php/Linux_Containers) LXC article.
+- LXC vs Docker
+
+<br>
+
+```
+lxc                   # Role name
+├── files             # Files directory (must be named like this)
+│   └── default.conf  # LXC configuration file
+├── handlers          # Handlers directory (must be named like this)
+│   └── main.yml      # Tasks which run when notified
+└── tasks             # Tasks directory (must be named like this)
+    └── main.yml      # Main instructions for Ansible
+```
+
+##
+
+## iRedMail
+
+- Hosting your own mail server is not a joke
+- Consider major provider (Fastmail, Office 365, G Suite, ...) if you plan to have a lot of users and if mail is critical for your businesss
+- Your mail server IP can get blocked even if _you_ haven't done anything wrong
+- It's not impossible, but requires attention
+- iRedMail inside LXC
+- [Traefik File Provider](https://doc.traefik.io/traefik/providers/file/)
+
+## iRedMail
+
+- Create LXC
+- Configure static IP address for LXC
+- Configure DNS inside LXC
+- Upgrade the OS
+- Make LXC start on boot
+- Add a backup script for LXC
+- Prepare LXC for iRedMail installation
+- Install iRedMail
+- Configure DNS entries
+- Configure TLS certificate
+- Create mail account
+- Configure iptables
+
+## iRedMail
+
+- One of the few things we'll do "by hand".
+
+- Directory for Linux containers:
+
+```
+mkdir /root/lxc
+```
+
+- Directory for specific Linux container:
+
+```
+mkdir /root/lxc/mail.do-p.com
+```
+
+- Create Linux container:
+
+```
+lxc-create --dir=/root/lxc/mail.do-p.com -n mail.do-p.com -t download -- -d ubuntu -r focal -a amd64
+```
+
+- Edit the LXC config:
+
+```
+vim /var/lib/lxc/mail.do-p.com/config
+```
+
+```
+lxc.net.0.ipv4.address = 10.100.100.11/24
+```
+
+## iRedMail
+
+<br>
+
+- Most common LXC commands:
+```
+lxc-ls -f
+lxc-start mail.do-p.com
+lxc-attach mail.do-p.com --clear-env
+lxc-stop mail.do-p.com
+```
+
+- DNS fix:
+
+```
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+mkdir /etc/systemd/resolved.conf.d
+vim /etc/systemd/resolved.conf.d/override.conf
+---
+[Resolve]
+DNS=1.1.1.1
+FallbackDNS=1.0.0.1
+```
+
+<br>
+
+```
+systemctl restart systemd-resolved
+```
+
+<br>
+
+```
+apt update && apt -y upgrade
+```
+
+## iRedMail
+
+- [iRedMail docs](https://docs.iredmail.org/index.html)
+- [Installing iRedMail on Ubuntu](https://docs.iredmail.org/install.iredmail.on.debian.ubuntu.html)
+
+```
+  - DNS A record:          mail.do-p.com   -> 172.105.75.112
+  - DNS PTR record:        172.105.75.112  -> mail.do-p.com
+  - DNS MX record:         do-p.com        -> mail.strogopro.com 10
+  - DNS SPF(TXT) record:   do-p.com        -> "v=spf1 mx -all"
+  - DNS DKIM(TXT) record:  dkim._domainkey -> "v=DKIM1; p=..."
+  - DNS DMARC(TXT) record: _dmarc          -> "v=DMARC1; p=reject; rua=mailto:reports@do-p.com"
+```
+
+- [Google Postmaster Tools](https://postmaster.google.com/)
+
+- TLS certificate for mail.do-p.com
+
+- Mail addresses:
+```
+    reports@do-p.com
+    notifications@do-p.com
+```
+
+## iRedMail
+
+- Firewall rules:
+  - port 25 (SMTP, for receiving mail from other mail servers)
+  - port 143 (IMAP, for retreiving mail by end users in mail clients)
+  - port 587 (SMTP, for sending mail)
+- Mail client configuration
+- Sending a test email
+
+##
+
+## Zulip
+
+- [Why Zulip](https://zulip.com/why-zulip/)
+- [Features](https://zulip.com/features/)
+- Open source
+- Good, free alternative to Slack, Microsoft Teams, ...
+- Mobile applications
+- [System Requirements](https://zulip.readthedocs.io/en/stable/production/requirements.html)
+
+## Zulip
+
+- Create LXC
+- Configure static IP address for LXC
+- Configure DNS inside LXC
+- Upgrade the OS
+- Make LXC start on boot
+- Add a backup script for LXC
+- Install Zulip
+- Configure DNS entry
+
+## Zulip
+
+- Directory for specific Linux container:
+
+```
+mkdir /root/lxc/zulip.do-p.com
+```
+
+- Create Linux container:
+
+```
+lxc-create --dir=/root/lxc/zulip.do-p.com -n zulip.do-p.com -t download -- -d ubuntu -r jammy -a amd64
+```
+
+- Edit the LXC config:
+
+```
+vim /var/lib/lxc/zulip.do-p.com/config
+---
+```
+
+```
+lxc.net.0.ipv4.address = 10.100.100.12/24
+```
+
+```
+lxc-start zulip.do-p.com
+lxc-ls -f
+lxc-attach zulip.do-p.com --clear-env
+```
+
+## Zulip
+
+- DNS fix:
+```
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+mkdir /etc/systemd/resolved.conf.d
+vim /etc/systemd/resolved.conf.d/override.conf
+---
+[Resolve]
+DNS=1.1.1.1
+FallbackDNS=1.0.0.1
+
+systemctl restart systemd-resolved
+```
+
+```
+
+apt update && apt -y upgrade
+
+apt install -y openssh-server
+```
+
+## Zulip
+- [Installing Zulip](https://zulip.readthedocs.io/en/stable/production/install.html)
+- Find latest release at the [download page](https://download.zulip.com/server/)
+
+```
+wget https://download.zulip.com/server/zulip-server-5.3.tar.gz
+tar xf zulip-server-5.3.tar.gz
+
+\./zulip-server-5.3/scripts/setup/install --self-signed-cert
+                                         --email=notifications@do-p.com
+                                         --hostname=zulip.do-p.com
+```
+
+- DNS
+
+```
+  - DNS A record:          zulip.do-p.com   -> 172.105.75.112
+```
+
+- systemd and Redis in LXC fix:
+```
+VPS: vim /var/lib/lxc/zulip.do-p.com/config
+---
+lxc.apparmor.allow_nesting = 1
+
+lxc-stop zulip.do-p.com
+lxc-start zulip.do-p.com
+```
+
+## Zulip
+
+Zulip uses two mail addresses: one for Zulip Administrator and one "no-reply"
+
+```
+
+Zulip LXC: vim /etc/zulip/settings.py
+---
+EMAIL_HOST = "mail.do-p.com"
+EMAIL_HOST_USER = "notifications@do-p.com"
+EMAIL_USE_TLS = True
+EMAIL_PORT = 587
+ADD_TOKENS_TO_NOREPLY_ADDRESS = True
+TOKENIZED_NOREPLY_EMAIL_ADDRESS = "zulip-noreply-{token}@do-p.com"
+
+Zulip LXC: vim /etc/zulip/zulip-secrets.conf
+---
+email_password = 
+
+Test with: su zulip -c '/home/zulip/deployments/current/manage.py send_test_email notifications@do-p.com'
+```
+
+## Zulip
+
+- Allowing custom FROM in iRedMail
+
+```
+iRedMail LXC: /etc/postfix/main.cf
+---
+
+CHANGE: smtpd_reject_unlisted_sender = no
+REMOVE: reject_unlisted_sender from smtpd_sender_restriction
+
+systemctl restart postfix.service
+
+iRedMail LXC: vim /opt/iredapd/settings.py
+---
+ALLOWED_LOGIN_MISMATCH_SENDERS = ['notifications@do-p.com']
+
+systemctl restart iredpad.service
+
+Test again: su zulip -c '/home/zulip/deployments/current/manage.py send_test_email notifications@do-p.com'
+```
+
+##
+
+## Traefik
+
+- [Traefik](https://traefik.io/traefik/) is a reverse proxy and TLS termination proxy we'll use for this setup.
+- It is the only entrypoint for HTTP(s) traffic.
+- We'll deploy it inside Docker, with [Docker](https://doc.traefik.io/traefik/providers/docker/) and [file](https://doc.traefik.io/traefik/providers/file/) providers.
+- [Docker labels](https://docs.docker.com/config/labels-custom-metadata/)
+
+```
+traefik                     # Role name
+├── tasks                   # Tasks directory (must be named like this)
+│   └── main.yml            # Main instructions for Ansible
+└── traefik                 # Traefik files
+    ├── .env                # File holding environment variables
+    ├── configs             # Traefik configs
+    │   ├── mail.yml        # File provider for mail.do-p.com
+    │   └── zulip.yml       # File provider for zulip.do-p.com
+    └── docker-compose.yml  # Used for defining the service
+```
+
+##
+
+## Pi-hole
+
+- [Pi-hole](https://pi-hole.net/) is a network-level ad and tracking blocking application, which can also act as a DHCP server.
+- You set a DNS server Pi-hole should use (e.g. 1.1.1.1), and Pi-hole will use that server for all legit requests, but if it is an ad-related hostname, Pi-hole will return 0.0.0.0.
+- You then set Pi-hole as a DNS server on your computer - ads are blocked, while legit requests are resolved.
+
+<br>
+
+```
+pi-hole                     # Role name
+├── pi-hole                 # Pi-hole files
+│   ├── .env                # List of key-value pairs used as environment variables
+│   ├── backup.sh           # Backup script
+│   ├── docker-compose.yml  # Used for defining the service
+│   └── etc-hosts           # hosts file that will be mounted as a volume to /etc/hosts
+└── tasks                   # Tasks directory (must be named like this)
+    └── main.yml            # Main instructions for Ansible
+```
+
+<br>
+
+```
+  - DNS A record: pi-hole.do-p.com -> 172.105.75.112
+```
+
+##
+
+## Nextcloud
+
+- [Nextcloud](https://nextcloud.com/athome/) is a suite of client-server software for creating and using file hosting services.
+- Calendars, Contacts, Streaming media, Browser-based text editor, Gallery, File sharing, [and a lot more](https://nextcloud.com/compare/).
+- [WebDAV](https://en.wikipedia.org/wiki/WebDAV), [CalDAV](https://en.wikipedia.org/wiki/CalDAV), [CardDAV](https://en.wikipedia.org/wiki/CardDAV)
+- Started as a fork of ownCloud
+
+<br>
+
+```
+nextcloud                   # Role name
+├── nextcloud               # Nextcloud files
+│   ├── .env                # List of key-value pairs used as environment variables
+│   ├── backup.sh           # Backup script
+│   └── docker-compose.yml  # Used for defining the service
+└── tasks                   # Tasks directory (must be named like this)
+    └── main.yml            # Main instructions for Ansible
+```
+
+<br>
+
+```
+  - DNS A record: nextcloud.do-p.com -> 172.105.75.112
+```
+
+## Nextcloud
+
+- Settings > Administration > Overview
+```
+cd /root/services/nextcloud
+docker-compose down
+vim html/config/config.php
+'trusted_proxies' =>
+array (
+  0 => '172.21.0.0/16',
+  1 => '172.22.0.0/16',
+  2 => '172.23.0.0/16',
+  3 => '172.24.0.0/16',
+  4 => '172.25.0.0/16',
+),
+docker-compose up -d
+
+Send mode: SMTP
+Encryption: STARTTLS
+Authentication method: login (required)
+Server address: mail.do-p.com (mail server FQDN)
+Port: 587
+```
+
+##
+
+## checkmk
+
+- [checkmk](https://checkmk.com/) (RAW edition) will be our monitoring tool of choice.
+- checkmk on server (running as a Docker container). Agents (and optional plugins) on hosts you want to monitor.
+- [checkmk in Docker](https://docs.checkmk.com/latest/en/managing_docker.html) documentation page.
+
+<br>
+
+```
+checkmk                     # Role name
+├── agent                   # Files for agent deployment
+│   ├── check_mk_agent      # checkmk agent
+│   ├── checkmk.socket      # checkmk socket definition
+│   └── checkmk@.service    # checkmk systemd service file
+├── checkmk                 # checkmk files
+│   ├── .env                # List of key-value pairs used as environment variables
+│   ├── backup.sh           # Backup script
+│   └── docker-compose.yml  # Used for defining the service
+└── tasks                   # Tasks directory (must be named like this)
+    └── main.yml            # Main instructions for Ansible
+```
+
+<br>
+
+```
+  - DNS A record: checkmk.do-p.com -> 172.105.75.112
+```
+
+## checkmk
+
+- Configure agent on the host you wish to monitor
+
+```
+check_mk_agent          -> /usr/bin/check_mk_agent
+check-mk-agent@.service -> /etc/systemd/system/check-mk-agent@.service
+check-mk-agent.socket   -> /etc/systemd/system/check-mk-agent.socket
+```
+
+- Start and enable the agent
+
+```
+systemctl start check-mk-agent.socket && systemctl enable check-mk-agent.socket
+```
+
+- Add host in checkmk web UI
+- `nsenter -t $PID -n $command`
+- `nsenter -t $(docker inspect --format {{.State.Pid}} checkmk.do-p.com) -n telnet vps.do-p.com 6556`
+- Add host with [REST API](https://docs.checkmk.com/latest/en/rest_api.html)
+
+##
+
+## Borg with borgmatic
+
+- [Borg](https://www.borgbackup.org/) - Deduplicating archiver
+with compression and encryption.
+- [borgmatic](https://torsion.org/borgmatic/) - wrapper around Borg for easier configuration. [Reference config](https://torsion.org/borgmatic/docs/reference/configuration/).
+- Install Borg on both the backup server and on the server you wish to backup (if you have one).
+- Install borgmatic on the server you wish to backup, create borgmatic configuration file, intilize the backup repository, and run borgmatic.
+
+<br>
+
+```
+borg                 # Role name
+├── files            # Files directory (must be named like this)
+│   ├── .env         # File holding environment variables
+│   ├── after.sh     # Script that will run after backup procedure ends
+│   ├── before.sh    # Script that will run before backup procedure starts
+│   ├── config.yaml  # borgmatic's configuration file
+│   └── error.sh     # Script that will run if some error occurs
+└── tasks            # Tasks directory (must be named like this)
+    └── main.yml     # Main instructions for Ansible
+```
+
+##
+
+## GitLab
+
+- [What is GitLab?](https://about.gitlab.com/)
+- [Official documentation for GitLab deployment using Docker](https://docs.gitlab.com/ee/install/docker.html)
+- [GitLab NGINX settings](https://docs.gitlab.com/omnibus/settings/nginx.html)
+- [GitLab Container Registry](https://docs.gitlab.com/ee/administration/packages/container_registry.html)
+
+<br>
+
+```
+gitlab                      # Role name
+├── gitlab                  # GitLab files
+│   ├── .env                # List of key-value pairs used as environment variables
+│   ├── docker-compose.yml  # Used for defining the service
+│   └── backup.sh           # Backup script
+└── tasks                   # Tasks directory (must be named like this)
+    └── main.yml            # Main instructions for Ansible
+```
+
+<br>
+
+```
+  - DNS A record: gitlab.do-p.com          -> 172.105.75.112
+  - DNS A record: gitlab-registry.do-p.com -> 172.105.75.112
+```
+
+##
+
+## GitLab runner
+
+- [GitLab Runner](https://docs.gitlab.com/runner/) is an application that works with GitLab CI/CD to run jobs in a pipeline.
+- Runner can be "shared", "group", or "specific"
+- Install GitLab runner to a server where you plan to run your pipelines (in this case, that's the VPS).
+- Register Runner (connect it with GitLab) and choose an [executor](https://docs.gitlab.com/runner/#executors).
+- Use `.gitlab-ci.yml` to define a pipeline.
+
+##
+
+## do-p.com website
+
+- Simple static website.
+- Running inside a Docker container, served by [Caddy](https://caddyserver.com/), deployed with GitLab CI/CD.
+
+<br>
+
+```
+NOTE: this is outside of 'ansible' directory.
+It is not a role, it's a separate project.
+```
+
+<br>
+
+```
+do-p.com                # Website directory
+├── .env                # List of key-value pairs used as environment variables
+├── .gitlab-ci.yml      # GitLab CI/CD job definition
+├── Caddyfile           # Caddy configuration file
+├── docker-compose.yml  # Used for defining the service
+└── index.html          # Simple html homepage
+```
+
+##
+
+## backup-checker
+
+- Python application that will run inside a Docker container,
+connect to the MariaDB, get the list of backups performed that day,
+compare that list with the list of expected backups, and then
+send the results to a Zulip stream.
+
+<br>
+
+```
+backup-checker            # Project directory
+├── .gitlab-ci.yml        # GitLab CI/CD job definition
+├── Dockerfile            # Instructions for building the Docker image
+└── app                   # Python application directory
+    ├── .env              # List of key-value pairs used as environment variables
+    ├── expected-backups  # List of backups expected to find in the database
+    ├── main.py           # Python application
+    └── requirements.txt  # Python requirements
+```
+
+- [Apprise GitHub page](https://github.com/caronc/apprise)
+- [Apprise Zulip documentation](https://github.com/caronc/apprise/wiki/Notify_zulip)
+- [Zulip bot](https://zulip.com/api/running-bots)
+- [GitLab CI/CD variables](https://docs.gitlab.com/ee/ci/variables/predefined_variables.html) and [GitLab Container Registry authentication](https://docs.gitlab.com/ee/user/packages/container_registry/#authenticate-by-using-gitlab-cicd)
+
+##
+
+## Staying up to date
+
+- You should keep your services and applications up to date
+- Keeping Docker images up to date
+  - `backup.sh` -> `backup-and-upgrade.sh`
+- [Upgrading iRedMail](https://docs.iredmail.org/iredmail.releases.html)
+  - [https://mail.do-p.com/iredadmin/](https://mail.do-p.com/iredadmin/)
+- [Upgrading Zulip](https://zulip.readthedocs.io/en/latest/production/upgrade-or-modify.html)
+- [Upgrading host OS](https://wiki.archlinux.org/title/system_maintenance#Upgrading_the_system)
+
+##
+
+## Docker prune
+
+- [Docker prune](https://docs.docker.com/config/pruning/)
+
+##
+
+## THAT'S IT!
+
+And we're done!
+
+ ...but not really :)
