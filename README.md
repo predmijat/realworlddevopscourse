@@ -20,4 +20,8 @@ Install `present` package:
 In the directory with `presentation.slide`:
 `present -base ~/go/pkg/mod/golang.org/x/tools@v0.6.0/cmd/present` (replace v0.6.0 with the latest version)
 
+#### Contributing
+
+I'll probably accept only spelling corrections, wrong file names or similar, or if something affects security. The idea is not to deviate from the material in the videos.
+
 Happy learning!
