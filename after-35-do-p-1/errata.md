@@ -37,3 +37,17 @@ Do not use `.` (dot) in the service name (`service=...` in `.env`). If you take 
 ##### 31: checkmk- Part 1
 
 In the video, I missed the `mailer_hostname` variable in `.env` file, but it is present in `.env-dist` file I shared already.
+
+---
+
+If your `checkmk` container hangs on `### STARTING MAIL SERVICES`, you are experiencing an issue that only happens sometimes and that I have no solution for.
+
+Check [this](https://forum.checkmk.com/t/checkmk-in-docker-with-mail-relay-host-wont-start/37008/3) thread on checkmk forums and maybe contribute if you have some additional information.
+
+In the meantime, you probably want to remove `MAIL_RELAY_HOST` and configure Zulip notifications by following [this](https://docs.checkmk.com/latest/en/notifications_slack.html) guide. In short:
+
+1) In Zulip, go to Personal settings, Bots and add a bot - write down API KEY
+2) In Zulip, create a stream, e.g. `checkmk`
+3) In checkmk, go to Setup, Notifications, Add Rule, Notification Method: Slack or Mattermost, Webhook URL:
+
+`https://$PUT_YOUR_DOMAIN_HERE/api/v1/external/slack_incoming?api_key=$PUT_YOUR_API_KEY_HERE&stream=$PUT_YOUR_STREAM_HERE&topic=$PUT_YOUR_TOPIC_HERE`
