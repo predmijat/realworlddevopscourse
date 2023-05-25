@@ -1,6 +1,9 @@
-#### Real world DevOps project from start to finish
+### Real world DevOps project from start to finish
+
+<img src="assets/img1.png" alt="do-p.com-scheme" width="400"/> <img src="assets/img2.png" alt="backup-checker-coding" width="400"/>
 
 These are the accompanying files for the the DevOps course I've created.
+
 
 There should always be a 85% OFF coupon over at [sre.rs](https://sre.rs),
 but you should also check if Udemy is offering a better discount at that moment.
