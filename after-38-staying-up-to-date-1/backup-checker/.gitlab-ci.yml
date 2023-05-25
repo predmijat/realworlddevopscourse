@@ -1,0 +1,40 @@
+stages:
+  - build
+  - push
+  - deploy
+  - cleanup
+
+build:
+  stage: build
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_PIPELINE_IID-$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE:latest .
+
+push:
+  stage: push
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE:$CI_PIPELINE_IID-$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+
+deploy:
+  stage: deploy
+  before_script:
+    - echo 'db_host=10.36.7.11' >> .env
+    - echo 'db_username=backup_script' >> .env
+    - echo 'db_password='${db_password} >> .env
+    - echo 'database=backups' >> .env
+    - echo 'db_table=list' >> .env
+    - echo 'zulip_bot_name=do-bot' >> .env
+    - echo 'zulip_bot_api_key='${zulip_bot_api_key} >> .env
+    - echo 'zulip_organization=zulip.do-p.com' >> .env
+    - echo 'zulip_stream=vps' >> .env
+    - echo 'zulip_topic=backups' >> .env
+  script:
+    - docker run --env-file .env $CI_REGISTRY_IMAGE:latest
+  only:
+    - main
+
+cleanup:
+  stage: cleanup
+  script:
+    - docker rmi $CI_REGISTRY_IMAGE:$CI_PIPELINE_IID-$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest -f
