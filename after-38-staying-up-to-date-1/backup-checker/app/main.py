@@ -17,7 +17,7 @@ db_username = f'{os.getenv("db_username")}'
 db_password = f'{os.getenv("db_password")}'
 database = f'{os.getenv("database")}'
 db_table = f'{os.getenv("db_table")}'
-zulip_bot_name = f'{os.getenv("zulip_bot_name")}'
+zulip_bot_email = f'{os.getenv("zulip_bot_email")}'
 zulip_bot_api_key = f'{os.getenv("zulip_bot_api_key")}'
 zulip_organization = f'{os.getenv("zulip_organization")}'
 zulip_stream = f'{os.getenv("zulip_stream")}'
@@ -94,7 +94,7 @@ def send_notification(**kwargs) -> None:
     body = str(kwargs["body"])
 
     apobj = apprise.Apprise()
-    apprise_string = f"zulip://{zulip_bot_name}@{zulip_organization}/{zulip_bot_api_key}/{zulip_stream}/"
+    apprise_string = f"zulip://{zulip_bot_email}@{zulip_organization}/{zulip_bot_api_key}/{zulip_stream}/"
     apobj.add(apprise_string)
     apobj.notify(
         body=f"```" f"\n" f"{message}" f"\n" f"{body}" f"\n" f"```",

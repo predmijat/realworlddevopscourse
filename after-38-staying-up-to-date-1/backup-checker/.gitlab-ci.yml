@@ -24,7 +24,7 @@ deploy:
     - echo 'db_password='${db_password} >> .env
     - echo 'database=backups' >> .env
     - echo 'db_table=list' >> .env
-    - echo 'zulip_bot_name=do-bot' >> .env
+    - echo 'zulip_bot_email=do-bot' >> .env
     - echo 'zulip_bot_api_key='${zulip_bot_api_key} >> .env
     - echo 'zulip_organization=zulip.do-p.com' >> .env
     - echo 'zulip_stream=vps' >> .env
