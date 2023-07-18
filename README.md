@@ -4,7 +4,6 @@
 
 These are the accompanying files for the the DevOps course I've created.
 
-
 There should always be a 85% OFF coupon over at [sre.rs](https://sre.rs),
 but you should also check if Udemy is offering a better discount at that moment.
 
@@ -24,8 +23,7 @@ Install [Go](https://go.dev/).
 Install `present` package:
 `go install golang.org/x/tools/cmd/present@latest`
 
-In the directory with `presentation.slide`:
-`present -base ~/go/pkg/mod/golang.org/x/tools@v0.6.0/cmd/present` (replace v0.6.0 with the latest version)
+`cd` into the directory where you've cloned this repository and run `present`.
 
 #### Contributing
 
