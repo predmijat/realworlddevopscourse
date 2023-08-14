@@ -39,11 +39,6 @@ COMMIT
 -A INPUT -s 172.23.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
 -A INPUT -s 172.24.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
 -A INPUT -s 172.25.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
--A INPUT -s 172.21.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
--A INPUT -s 172.22.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
--A INPUT -s 172.23.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
--A INPUT -s 172.24.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
--A INPUT -s 172.25.0.0/16 -d 172.105.75.112 -p tcp -m multiport --dports 80,443 -j ACCEPT
 
 # WireGuard clients
 -A INPUT -s 10.100.94.11/32 -j ACCEPT
