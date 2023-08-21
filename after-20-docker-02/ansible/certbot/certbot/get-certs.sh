@@ -12,7 +12,7 @@ certbot certonly \
     --domain '*.do-p.com'
 
 
-# If you need multiple domain in iRedMail
+# If you need multiple domains in iRedMail
 # uncomment the section below and adjust '--domain'.
 # You need separate TLS certificates for multiple
 # domains in iRedMail because Postfix/Dovecot
