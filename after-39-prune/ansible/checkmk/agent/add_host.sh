@@ -4,7 +4,7 @@ script_dir=$(dirname "$(readlink -f "$0")")
 . "${script_dir}"/.env
 
 host=$(hostname -f)
-default_interface=$(awk '$2 == 00000000 { print $1 }' /proc/net/route)
+default_interface=$(ip r | awk '/default/ {print $5}' | head -n1)
 ip_address=$(ip a show dev "${default_interface}" | awk '$1 == "inet" { sub("/.*", "", $2); print $2}')
 
 checkmk_api_url="${checkmk_api_url}"
