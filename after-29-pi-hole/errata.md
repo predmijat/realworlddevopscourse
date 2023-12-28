@@ -20,6 +20,17 @@ This will also be used for the interface name which at the moment I'm writing th
 
 Special THANK YOU goes to Bojana Dejanovic for reporting this one!
 
+##### 21: MariaDB
+
+In the video I say that `mysql` and `mariadb` commands are interchangeable. Since then, MariaDB has deprecated the `mysql` command and it will remove it in a future version. You can either use `mariadb` command, or if you really want to conitinue to use `mysql` you can create a symlink like we did with `vi` -> `vim` in `essentials/tasks/packages.yml`. To do that, add the following block to `mariadb/tasks/main.yml`:
+```
+- name: symlink mysql
+  ansible.builtin.file:
+    src: /usr/bin/mysql
+    dest: /usr/bin/mariadb
+    state: link
+```
+
 ##### 24: iRedMail - Part 1
 
 Linode blocks port 25 on all accounts created after November 5th, 2019.
