@@ -26,16 +26,16 @@ services:
       - "traefik.http.routers.${service_gitlab}.entrypoints=https"
       - "traefik.http.routers.${service_gitlab}.service=${service_gitlab}"
       - "traefik.http.services.${service_gitlab}.loadbalancer.server.port=80"
-      - "traefik.http.routers.${service_gitlab}.middlewares=${service_gitlab}-whitelist"
-      - "traefik.http.middlewares.${service_gitlab}-whitelist.ipwhitelist.sourcerange=${ip_whitelist}"
+      - "traefik.http.routers.${service_gitlab}.middlewares=${service_gitlab}-allowlist"
+      - "traefik.http.middlewares.${service_gitlab}-allowlist.ipallowlist.sourcerange=${ip_allowlist}"
       # docker-registry
       - "traefik.http.routers.${service_registry}.rule=Host(`${hostname_registry}`)"
       - "traefik.http.routers.${service_registry}.tls.certresolver=letsencrypt"
       - "traefik.http.routers.${service_registry}.entrypoints=https"
       - "traefik.http.routers.${service_registry}.service=${service_registry}"
       - "traefik.http.services.${service_registry}.loadbalancer.server.port=5050"
-      - "traefik.http.routers.${service_registry}.middlewares=${service_registry}-whitelist"
-      - "traefik.http.middlewares.${service_registry}-whitelist.ipwhitelist.sourcerange=${ip_whitelist}"
+      - "traefik.http.routers.${service_registry}.middlewares=${service_registry}-allowlist"
+      - "traefik.http.middlewares.${service_registry}-allowlist.ipallowlist.sourcerange=${ip_allowlist}"
 
     environment:
       GITLAB_OMNIBUS_CONFIG: |

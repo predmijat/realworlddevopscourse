@@ -9,11 +9,11 @@ http:
       entryPoints:
         - https
       middlewares:
-        - zulip-whitelist
+        - zulip-allowlist
 
   middlewares:
-    zulip-whitelist:
-      ipWhiteList:
+    zulip-allowlist:
+      ipallowlist:
         sourceRange:
           - "10.100.94.1/24"
           - "172.21.0.0/16"

@@ -25,8 +25,8 @@ services:
       - "traefik.http.routers.${service}.tls.certresolver=letsencrypt"
       - "traefik.http.routers.${service}.entrypoints=https"
       - "traefik.http.services.${service}.loadbalancer.server.port=5000"
-        #- "traefik.http.routers.${service}.middlewares=${service}-whitelist"
-        #- "traefik.http.middlewares.${service}-whitelist.ipwhitelist.sourcerange=${ip_whitelist}"
+        #- "traefik.http.routers.${service}.middlewares=${service}-allowlist"
+        #- "traefik.http.middlewares.${service}-allowlist.ipallowlist.sourcerange=${ip_allowlist}"
 
   mailer:
     image: namshi/smtp

@@ -50,8 +50,8 @@ services:
       - "traefik.http.routers.redirects.middlewares=redirect-to-https"
       - "traefik.http.routers.${service}.tls.certresolver=letsencrypt"
       - "traefik.http.routers.${service}.service=api@internal"
-      - "traefik.http.routers.${service}.middlewares=${service}-whitelist,${service}-auth"
-      - "traefik.http.middlewares.${service}-whitelist.ipwhitelist.sourcerange=${ip_whitelist}"
+      - "traefik.http.routers.${service}.middlewares=${service}-allowlist,${service}-auth"
+      - "traefik.http.middlewares.${service}-allowlist.ipallowlist.sourcerange=${ip_allowlist}"
       - "traefik.http.middlewares.${service}-auth.basicauth.users=${traefik_dashboard_username}:${traefik_dashboard_password}"
 
 networks:

@@ -9,11 +9,11 @@ http:
       entryPoints:
         - https
       middlewares:
-        - mail-whitelist
+        - mail-allowlist
 
   middlewares:
-    mail-whitelist:
-      ipWhiteList:
+    mail-allowlist:
+      ipallowlist:
         sourceRange:
           - "10.100.94.1/24"
 
