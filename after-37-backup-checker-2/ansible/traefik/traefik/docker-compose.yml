@@ -45,7 +45,7 @@ services:
       - "traefik.http.routers.${service}.rule=Host(`${hostname}`)"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
-      - "traefik.http.routers.redirects.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirects.rule=hostregexp(`.+`)"
       - "traefik.http.routers.redirects.entrypoints=http"
       - "traefik.http.routers.redirects.middlewares=redirect-to-https"
       - "traefik.http.routers.${service}.tls.certresolver=letsencrypt"
