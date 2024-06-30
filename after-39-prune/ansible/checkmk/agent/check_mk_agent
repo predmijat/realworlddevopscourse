@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2019 tribe29 GmbH - License: GNU General Public License v2
+# Copyright (C) 2019 Checkmk GmbH - License: GNU General Public License v2
 # This file is part of Checkmk (https://checkmk.com). It is subject to the terms and
 # conditions defined in the file COPYING, which is part of this source code package.
 
@@ -17,6 +17,8 @@ Options:
   -h, --help                 show this message and exit
   -d, --debug                emit debugging messages
   -p, --profile              create files containing the execution times
+  --force-inventory          get the output of the agent plugin 'mk_inventory'
+                             independent of the last run state.
 HERE
 }
 
@@ -42,7 +44,7 @@ is_valid_plugin() {
     # test if a file is executable and does not have certain
     # extensions (remnants from distro upgrades).
     case "${1:?No plugin defined}" in
-        *.dpkg-new | *.dpkg-old | *.dpkg-temp) return 1 ;;
+        *.dpkg-new | *.dpkg-old | *.dpkg-temp | *.dpkg-tmp) return 1 ;;
         *) [ -f "${1}" ] && [ -x "${1}" ] ;;
     esac
 }
@@ -52,8 +54,7 @@ set_up_process_commandline_arguments() {
         case "${1}" in
             -d | --debug)
                 set -xv
-                # restore stderr
-                exec 2>&9
+                DISABLE_STDERR=false
                 shift
                 ;;
 
@@ -61,6 +62,11 @@ set_up_process_commandline_arguments() {
                 LOG_SECTION_TIME=true
                 # disable caching to get the whole execution time
                 DISABLE_CACHING=true
+                shift
+                ;;
+
+            --force-inventory)
+                export MK_FORCE_INVENTORY=true
                 shift
                 ;;
 
@@ -85,6 +91,12 @@ set_up_get_epoch() {
         # in weird cases we may be fine without get_epoch.
         get_epoch() { perl -e 'print($^T."\n");'; }
     fi
+}
+
+set_up_current_shell() {
+    # Note the current shell may not be the same as what is specified in the
+    # shebang, e.g. when reconfigured in the xinetd/systemd/whateverd config file
+    CURRENT_SHELL="$(ps -o args= -p $$ | cut -d' ' -f1)"
 }
 
 #
@@ -193,7 +205,7 @@ set_up_profiling() {
         MK_DEFINE_LOG_SECTION_TIME='_log_section_time() {
             section_func="$@"
 
-            base_name=$(echo "${section_func}" | tr -c "A-Za-z0-9.-" _)
+            base_name=$(echo "${section_func}" | sed "s/[^A-Za-z0-9.-]/_/g")
             profiling_logfile="'"${PROFILING_LOGFILE_DIR}"'/${base_name}.log"
 
             start="$(perl -MTime::HiRes=time -le "print time()")"
@@ -217,7 +229,7 @@ set_up_profiling() {
 unset_locale() {
     # eliminate localized outputs where possible
     # The locale logic here is used to make the Python encoding detection work (see CMK-2778).
-    unset -v LANG
+    unset -v LANG LC_ALL
     if inpath locale && inpath paste; then
         # match C.UTF-8 at the beginning, but not e.g. es_EC.UTF-8!
         case "$(locale -a | paste -sd ' ' -)" in
@@ -305,13 +317,63 @@ if inpath timeout; then
     waitmax() {
         timeout "$@"
     }
-    export -f waitmax
 fi
+
+encryption_panic() {
+    echo "<<<check_mk>>>"
+    echo "EncryptionPanic: true"
+    exit 1
+}
 
 set_up_encryption() {
     # shellcheck source=agents/cfg_examples/encryption.cfg
-    [ -f "${MK_CONFDIR}/encryption.cfg" ] && . "${MK_CONFDIR}/encryption.cfg"
+    [ -f "${MK_CONFDIR}/encryption.cfg" ] && {
+        . "${MK_CONFDIR}/encryption.cfg" || encryption_panic
+    }
     define_optionally_encrypt "${ENCRYPTED:-"no"}"
+}
+
+hex_decode() {
+    # We might not have xxd available, so we have to do it manually.
+    # Be aware that this implementation is very slow and should not be used for large data.
+    local hex="$1"
+    for ((i = 0; i < ${#hex}; i += 2)); do
+        printf '%b' "\x${hex:i:2}"
+    done
+}
+
+parse_kdf_output() {
+    local kdf_output="$1"
+    salt_hex=$(echo "$kdf_output" | grep -oP "(?<=salt=)[0-9A-F]+")
+    key_hex=$(echo "$kdf_output" | grep -oP "(?<=key=)[0-9A-F]+")
+    iv_hex=$(echo "$kdf_output" | grep -oP "(?<=iv =)[0-9A-F]+")
+    # Make sure this rather brittle grepping worked. For example, some openssl update might decide
+    # to remove that odd-looking space behind 'iv'.
+    # Note that the expected LENGTHS ARE DOUBLED because the values are hex encoded.
+    if [ ${#salt_hex} -ne 16 ] || [ ${#key_hex} -ne 64 ] || [ ${#iv_hex} -ne 32 ]; then
+        encryption_panic
+    fi
+    echo "$salt_hex" "$key_hex" "$iv_hex"
+}
+
+encrypt_then_mac() {
+    # Encrypt the input data, calculate a MAC over IV and ciphertext, then
+    # print mac and ciphertext.
+    local salt_hex="$1"
+    local key_hex="$2"
+    local iv_hex="$3"
+    local ciphertext_b64
+
+    # We need the ciphertext twice: for the mac and for the output. But we can only store it in
+    # encoded form because it can contain null bytes.
+    ciphertext_b64=$(openssl enc -aes-256-cbc -K "$key_hex" -iv "$iv_hex" | openssl enc -base64)
+
+    (
+        hex_decode "$iv_hex"
+        echo "$ciphertext_b64" | openssl enc -base64 -d
+    ) | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$key_hex" -binary
+
+    echo "$ciphertext_b64" | openssl enc -base64 -d
 }
 
 define_optionally_encrypt() {
@@ -320,17 +382,52 @@ define_optionally_encrypt() {
 
     if [ "${1}" != "no" ]; then
         OPENSSL_VERSION=$(openssl version | awk '{print $2}' | awk -F . '{print (($1 * 100) + $2) * 100+ $3}')
-        # Depending on the Checkmk version, a key of proper length (256 bits) is provided.
-        # However, always use key derivation here (suitable for passwords of all lengths).
+        #
+        # Encryption scheme for version 04 and 05:
+        #
+        #   salt    <- random_salt()
+        #   key, IV <- version_specific_kdf( salt, password )
+        #
+        #   ciphertext <- aes_256_cbc_encrypt( key, IV, message )
+        #   mac        <- hmac_sha256( key, iv:ciphertext )
+        #
+        #   // The output blob is formed as:
+        #   // - 2 bytes version
+        #   // - optional: rtc timestamp
+        #   // - 8 bytes salt
+        #   // - 32 bytes MAC
+        #   // - the ciphertext
+        #   result <- [version:salt:mac:ciphertext]
+
         if [ "${OPENSSL_VERSION}" -ge 10101 ]; then
             optionally_encrypt() {
-                printf "03%s" "${2}"
-                openssl enc -aes-256-cbc -md sha256 -iter 10000 -k "${1}"
+                # version: 05
+                # kdf: pbkdf2, 600.000 iterations
+
+                local salt_hex key_hex iv_hex
+                read -r salt_hex key_hex iv_hex <<<"$(
+                    parse_kdf_output "$(openssl enc -aes-256-cbc -md sha256 -pbkdf2 -iter 600000 -k "${1}" -P)"
+                )"
+
+                printf "05"
+                printf "%s" "${2}"
+                hex_decode "$salt_hex"
+                encrypt_then_mac "$salt_hex" "$key_hex" "$iv_hex"
             }
         elif [ "${OPENSSL_VERSION}" -ge 10000 ]; then
             optionally_encrypt() {
-                printf "02%s" "${2}"
-                openssl enc -aes-256-cbc -md sha256 -k "${1}" -nosalt
+                # version: 04
+                # kdf: openssl custom kdf based on sha256
+
+                local salt_hex key_hex iv_hex
+                read -r salt_hex key_hex iv_hex <<<"$(
+                    parse_kdf_output "$(openssl enc -aes-256-cbc -md sha256 -k "${1}" -P)"
+                )"
+
+                printf "04"
+                printf "%s" "${2}"
+                hex_decode "$salt_hex"
+                encrypt_then_mac "$salt_hex" "$key_hex" "$iv_hex"
             }
         else
             optionally_encrypt() {
@@ -354,10 +451,20 @@ set_up_disabled_sections() {
     fi
 }
 
+export_utility_functions() {
+    # At the time of writing of this function, the linux agent exports
+    # some helper functions, so I consolidate those exports here.
+    # I am not sure whether this is a good idea, though.
+    # Their API is unstable.
+    export -f run_mrpe
+    export -f waitmax
+    export -f run_cached
+}
+
 section_checkmk() {
     cat <<HERE
 <<<check_mk>>>
-Version: 2.1.0p11
+Version: 2.3.0p7
 AgentOS: linux
 Hostname: $(uname -n)
 AgentDirectory: ${MK_CONFDIR}
@@ -380,6 +487,20 @@ HERE
         #
         # However this ("successfully") reports an empty list or '[unprintable]' on older systemd versions :-(
     fi
+
+    #
+    # OS based labels are created from these variables
+    #
+
+    echo "OSType: linux"
+    while read -r line; do
+        raw_line="${line//\"/}"
+        case $line in
+            ID=*) echo "OSPlatform: ${raw_line##*=}" ;;
+            NAME=*) echo "OSName: ${raw_line##*=}" ;;
+            VERSION_ID=*) echo "OSVersion: ${raw_line##*=}" ;;
+        esac
+    done <<<"$(cat /etc/os-release 2>/dev/null)"
 
     #
     # BEGIN COMMON AGENT CODE
@@ -436,6 +557,7 @@ section_checkmk_failed_plugin() {
 
 section_labels() {
     echo '<<<labels:sep(0)>>>'
+
     if [ -n "${IS_DOCKERIZED}" ] || [ -n "${IS_LXC_CONTAINER}" ]; then
         echo '{"cmk/device_type":"container"}'
     elif grep "hypervisor" /proc/cpuinfo >/dev/null 2>&1; then
@@ -527,13 +649,13 @@ section_df() {
         excludefs="${excludefs} -x zfs"
     fi
 
-    echo '<<<df>>>'
+    echo '<<<df_v2>>>'
     # We really *need* word splitting below!
     # shellcheck disable=SC2086
     df -PTlk ${excludefs} | sed 1d
 
     # df inodes information
-    echo '<<<df>>>'
+    echo '<<<df_v2>>>'
     echo '[df_inodes_start]'
     # We really *need* word splitting below!
     # shellcheck disable=SC2086
@@ -542,7 +664,7 @@ section_df() {
 
     if inpath lsblk; then
         echo "[df_lsblk_start]"
-        lsblk --list --json --paths --output NAME,UUID
+        lsblk --list --paths --output NAME,UUID
         echo "[df_lsblk_end]"
     fi
 }
@@ -550,12 +672,13 @@ section_df() {
 section_systemd() {
     if inpath systemctl; then
         echo '<<<systemd_units>>>'
+        # use plain to force ASCII output that is simpler to parse
         echo "[list-unit-files]"
-        systemctl list-unit-files --no-pager | tr -s ' '
+        systemctl list-unit-files --full --no-legend --no-pager --plain --type service --type socket | tr -s ' '
         echo "[status]"
-        systemctl status --all --type service --no-pager --lines 0 | tr -s ' '
+        systemctl status --all --type service --type socket --no-pager --lines 0 | tr -s ' '
         echo "[all]"
-        systemctl --all --no-pager | sed '/^$/q' | tr -s ' '
+        systemctl --all --type service --type socket --full --no-legend --no-pager --plain | sed '/^$/q' | tr -s ' '
     fi
 }
 
@@ -570,27 +693,38 @@ section_zfs() {
 }
 
 section_nfs_mounts() {
+    proc_mounts_file=${1}
+
     if inpath waitmax; then
         STAT_VERSION=$(stat --version | head -1 | cut -d" " -f4)
         STAT_BROKE="5.3.0"
 
-        echo '<<<nfsmounts>>>'
-        sed -n '/ nfs4\? /s/[^ ]* \([^ ]*\) .*/\1/p' </proc/mounts |
-            sed 's/\\040/ /g' |
-            while read -r MP; do
+        json_templ() {
+            echo '{"mountpoint": "'"${1}"'", "source": "'"${2}"'", "state": "ok", "usage": {"total_blocks": %b, "free_blocks_su": %f, "free_blocks": %a, "blocksize": %s}}'
+        }
+        json_templ_empty() {
+            echo '{"mountpoint": "'"${1}"'", "source": "'"${2}"'", "state": "hanging", "usage": {"total_blocks": 0, "free_blocks_su": 0, "free_blocks": 0, "blocksize": 0}}'
+        }
+
+        echo '<<<nfsmounts_v2:sep(0)>>>'
+
+        sed -n '/ nfs4\? /s/\([^ ]*\) \([^ ]*\) .*/\1 \2/p' <"${proc_mounts_file}" |
+            while read -r MD MP; do
+                MD="$(printf "%s" "${MD}" | sed 's/\\040/ /g')"
+                MP="$(printf "%s" "${MP}" | sed 's/\\040/ /g')"
                 if [ "${STAT_VERSION}" != "${STAT_BROKE}" ]; then
-                    waitmax -s 9 5 stat -f -c "${MP} ok %b %f %a %s" "${MP}" ||
-                        echo "${MP} hanging 0 0 0 0"
+                    waitmax -s 9 5 stat -f -c "$(json_templ "${MP}" "${MD}")" "${MP}" ||
+                        json_templ_empty "${MP}" "${MD}"
                 else
-                    waitmax -s 9 5 stat -f -c "${MP} ok %b %f %a %s" "${MP}" &&
-                        printf '\n' || echo "${MP} hanging 0 0 0 0"
+                    (waitmax -s 9 5 stat -f -c "$(json_templ "${MP}" "${MD}")" "${MP}" &&
+                        printf '\n') || json_templ_empty "${MP}" "${MD}"
                 fi
             done
 
         echo '<<<cifsmounts>>>'
-        sed -n '/ cifs\? /s/[^ ]* \([^ ]*\) .*/\1/p' </proc/mounts |
-            sed 's/\\040/ /g' |
+        sed -n -e '/ cifs /s/.*\ \([^ ]*\)\ cifs\ .*/\1/p' <"${proc_mounts_file}" |
             while read -r MP; do
+                MP="$(printf "%s" "${MP}" | sed 's/\\040/ /g')"
                 if [ ! -r "${MP}" ]; then
                     echo "${MP} Permission denied"
                 elif [ "${STAT_VERSION}" != "${STAT_BROKE}" ]; then
@@ -613,11 +747,14 @@ section_ps() {
     if inpath ps; then
         # processes including username, without kernel processes
         echo '<<<ps_lnx>>>'
+        echo "[time]"
+        get_epoch
+        echo "[processes]"
         CGROUP=""
         if [ -e /sys/fs/cgroup ]; then
             CGROUP="cgroup:512,"
         fi
-        echo "[header] $(ps ax -o "${CGROUP}"user:32,vsz,rss,cputime,etime,pid,command --columns 10000 | tr -s ' ')"
+        echo "[header] $(ps ax -ww -o "${CGROUP}"user:32,vsz,rss,cputime,etime,pid,command | tr -s ' ')"
     fi
 }
 
@@ -680,10 +817,8 @@ section_tcp() {
 
 section_multipathing() {
     if inpath multipath; then
-        if [ -f /etc/multipath.conf ]; then
-            echo '<<<multipath>>>'
-            multipath -l
-        fi
+        echo '<<<multipath>>>'
+        multipath -l
     fi
 }
 
@@ -727,7 +862,7 @@ section_chrony() {
         # The "| cat" has been added for some kind of regression in RedHat 7.5. The
         # SELinux rules shipped with that release were denying the chronyc call
         # without cat.
-        run_cached "chrony" 30 "echo '<<<chrony>>>'; waitmax 5 chronyc -n tracking | cat || true"
+        _run_cached_internal "chrony" 30 120 200 20 "echo '<<<chrony>>>'; waitmax 5 chronyc -n tracking | cat || true"
     fi
 }
 
@@ -741,9 +876,9 @@ section_kernel() {
 
 section_ipmitool() {
     if inpath ipmitool; then
-        run_cached "ipmi" 300 "echo '<<<ipmi:sep(124)>>>'; waitmax 300 ipmitool sensor list | grep -v 'command failed' | grep -v -E '^[^ ]+ na ' | grep -v ' discrete '"
+        _run_cached_internal "ipmi" 300 300 900 600 "echo '<<<ipmi:sep(124)>>>'; waitmax 300 ipmitool sensor list | grep -v 'command failed' | grep -v -E '^[^ ]+ na ' | grep -v ' discrete '"
         # readable discrete sensor states
-        run_cached "ipmi_discrete" 300 "echo '<<<ipmi_discrete:sep(124)>>>'; waitmax 300 ipmitool sdr elist compact"
+        _run_cached_internal "ipmi_discrete" 300 300 900 600 "echo '<<<ipmi_discrete:sep(124)>>>'; waitmax 300 ipmitool sdr elist compact"
     fi
 }
 
@@ -763,7 +898,7 @@ section_ipmisensors() {
     fi
 
     # At least with ipmi-sensors 0.7.16 this group is Power_Unit instead of "Power Unit"
-    run_cached "ipmi_sensors" 300 "echo '<<<ipmi_sensors>>>'; for class in Temperature Power_Unit Fan; do
+    _run_cached_internal "ipmi_sensors" 300 300 900 600 "echo '<<<ipmi_sensors>>>'; for class in Temperature Power_Unit Fan; do
         ipmi-sensors ${IPMI_FORMAT} --sdr-cache-directory /var/cache ${IPMI_GROUP_OPT} \"\${class}\" | sed -e 's/ /_/g' -e 's/:_\?/ /g' -e 's@ \([^(]*\)_(\([^)]*\))@ \2_\1@'
         # In case of a timeout immediately leave loop.
         if [ $? = 255 ]; then break; fi
@@ -834,25 +969,23 @@ section_megaraid() {
     elif inpath megacli; then
         MegaCli_bin="megacli"
     else
-        MegaCli_bin="unknown"
+        return 1
     fi
 
-    if [ "${MegaCli_bin}" != "unknown" ]; then
-        echo '<<<megaraid_pdisks>>>'
-        for part in $(${MegaCli_bin} -EncInfo -aALL -NoLog </dev/null |
-            sed -rn 's/:/ /g; s/[[:space:]]+/ /g; s/^ //; s/ $//; s/Number of enclosures on adapter ([0-9]+).*/adapter \1/g; /^(Enclosure|Device ID|adapter) [0-9]+$/ p'); do
-            [ "${part}" = adapter ] && printf "\n"
-            [ "${part}" = 'Enclosure' ] && printf "\ndev2enc"
-            printf " %s" "${part}"
-        done
-        echo
-        ${MegaCli_bin} -PDList -aALL -NoLog </dev/null |
-            grep -E 'Enclosure|Raw Size|Slot Number|Device Id|Firmware state|Inquiry|Adapter|Predictive Failure Count'
-        echo '<<<megaraid_ldisks>>>'
-        ${MegaCli_bin} -LDInfo -Lall -aALL -NoLog </dev/null | grep -E 'Size|State|Number|Adapter|Virtual'
-        echo '<<<megaraid_bbu>>>'
-        ${MegaCli_bin} -AdpBbuCmd -GetBbuStatus -aALL -NoLog </dev/null | grep -v Exit
-    fi
+    echo '<<<megaraid_pdisks>>>'
+    for part in $(${MegaCli_bin} -EncInfo -aALL -NoLog </dev/null |
+        sed -rn 's/:/ /g; s/[[:space:]]+/ /g; s/^ //; s/ $//; s/Number of enclosures on adapter ([0-9]+).*/adapter \1/g; /^(Enclosure|Device ID|adapter) [0-9]+$/ p'); do
+        [ "${part}" = adapter ] && printf "\n"
+        [ "${part}" = 'Enclosure' ] && printf "\ndev2enc"
+        printf " %s" "${part}"
+    done
+    echo
+    ${MegaCli_bin} -PDList -aALL -NoLog </dev/null |
+        grep -E 'Enclosure|Raw Size|Slot Number|Device Id|Firmware state|Inquiry|Adapter|Predictive Failure Count'
+    echo '<<<megaraid_ldisks>>>'
+    ${MegaCli_bin} -LDInfo -Lall -aALL -NoLog </dev/null | grep -E 'Size|State|Number|Adapter|Virtual'
+    echo '<<<megaraid_bbu>>>'
+    ${MegaCli_bin} -AdpBbuCmd -GetBbuStatus -aALL -NoLog </dev/null | grep -v Exit
 }
 
 section_3ware_raid() {
@@ -870,7 +1003,7 @@ section_3ware_raid() {
 
 section_areca_raid() {
     if inpath cli64; then
-        run_cached "arc_raid_status" 300 "echo '<<<arc_raid_status>>>'; cli64 rsf info | tail -n +3 | head -n -2"
+        _run_cached_internal "arc_raid_status" 300 300 900 600 "echo '<<<arc_raid_status>>>'; cli64 rsf info | tail -n +3 | head -n -2"
     fi
 }
 
@@ -952,6 +1085,27 @@ read_postfix_queue_dirs() {
     fi
 }
 
+## Postfix status monitoring
+read_postfix_master_pid() {
+    postfix_queue_dir=${1}
+    postfix_instance_name=${2}
+    echo "<<<postfix_mailq_status:sep(58)>>>"
+    if [ -e "${postfix_queue_dir}/pid/master.pid" ]; then
+        if [ -r "${postfix_queue_dir}/pid/master.pid" ]; then
+            postfix_pid=$(sed 's/ //g' <"${postfix_queue_dir}/pid/master.pid") # handle possible spaces in output
+            if ps -p "${postfix_pid}" -o cmd= | grep -q ".*postfix/\(s\?bin/\)\?/\?master.*"; then
+                echo "${postfix_instance_name}:the Postfix mail system is running:PID:${postfix_pid}"
+            else
+                echo "${postfix_instance_name}:PID file exists but instance is not running!"
+            fi
+        else
+            echo "${postfix_instance_name}:PID file exists but is not readable"
+        fi
+    else
+        echo "${postfix_instance_name}:the Postfix mail system is not running"
+    fi
+}
+
 ## Postfix mailqueue monitoring
 ## Determine the number of mails and their size in several postfix mail queue
 section_mailqueue() {
@@ -964,36 +1118,18 @@ section_mailqueue() {
                 if [ -n "${queue_dir}" ]; then
                     postfix_queue_dir=$(postconf -c "${queue_dir}" 2>/dev/null | grep ^queue_directory | sed 's/.*=[[:space:]]*//g')
                     read_postfix_queue_dirs "${postfix_queue_dir}" "${queue_dir}"
+                    postfix_instance_name=$(postconf -c "${queue_dir}" -h multi_instance_name 2>/dev/null)
+                    read_postfix_master_pid "${postfix_queue_dir}" "${postfix_instance_name}"
                 fi
             done
         fi
         # Always check for the default queue. It can exist even if multiple instances are configured
-        read_postfix_queue_dirs "$(postconf -h queue_directory 2>/dev/null)"
+        read_postfix_queue_dirs "$(postconf -h queue_directory 2>/dev/null)" "default"
+        read_postfix_master_pid "$(postconf -h queue_directory 2>/dev/null)" "default"
 
     elif [ -x /usr/sbin/ssmtp ]; then
         echo '<<<postfix_mailq>>>'
         mailq 2>&1 | sed 's/^[^:]*: \(.*\)/\1/' | tail -n 6
-    fi
-
-    # Postfix status monitoring. Can handle multiple instances.
-    if inpath postfix; then
-        echo "<<<postfix_mailq_status:sep(58)>>>"
-        for i in /var/spool/postfix*/; do
-            if [ -e "${i}/pid/master.pid" ]; then
-                if [ -r "${i}/pid/master.pid" ]; then
-                    postfix_pid=$(sed 's/ //g' <"${i}/pid/master.pid") # handle possible spaces in output
-                    if readlink -- "/proc/${postfix_pid}/exe" | grep -q ".*postfix/\(s\?bin/\)\?master.*"; then
-                        echo "${i}:the Postfix mail system is running:PID:${postfix_pid}" | sed 's/\/var\/spool\///g'
-                    else
-                        echo "${i}:PID file exists but instance is not running!" | sed 's/\/var\/spool\///g'
-                    fi
-                else
-                    echo "${i}:PID file exists but is not readable"
-                fi
-            else
-                echo "${i}:the Postfix mail system is not running" | sed 's/\/var\/spool\///g'
-            fi
-        done
     fi
 
     # Check status of qmail mailqueue
@@ -1020,7 +1156,8 @@ section_mailqueue() {
 
 section_omd() {
     if inpath omd; then
-        run_cached "omd_status" 60 "echo '<<<omd_status>>>'; omd status --bare || true"
+        # 60 is _probably_ the agents polling interval. Why would you use that??
+        _run_cached_internal "omd_status" 60 60 180 120 "echo '<<<omd_status>>>'; omd status --bare || true"
 
         ${MK_RUN_SYNC_PARTS} || return
 
@@ -1046,6 +1183,30 @@ section_omd() {
                 # prevent next section to fail caused by a missing newline at the end of the statsfile
                 echo
             fi
+        done
+
+        _du_no_errors() {
+            if [ -e "${1}" ]; then
+                output=$(du -bs "$1") && printf "%s\n" "${output}"
+            else
+                printf "0 %s\n" "${1}"
+            fi
+        }
+
+        echo '<<<omd_diskusage:sep(0)>>>'
+        for sitedir in /omd/sites/*; do
+            site=${sitedir#/omd/sites/}
+            echo "[site ${site}]"
+            _du_no_errors "$sitedir"
+            _du_no_errors "$sitedir/var/log"
+            _du_no_errors "$sitedir/var/check_mk/rrd"
+            _du_no_errors "$sitedir/var/pnp4nagios/"
+            _du_no_errors "$sitedir/tmp/"
+            _du_no_errors "$sitedir/local/"
+            _du_no_errors "$sitedir/var/check_mk/agents/"
+            _du_no_errors "$sitedir/var/mkeventd/history/"
+            _du_no_errors "$sitedir/var/check_mk/core/"
+            _du_no_errors "$sitedir/var/check_mk/inventory_archive/"
         done
 
         echo '<<<omd_info:sep(59)>>>'
@@ -1109,10 +1270,24 @@ section_omd_core() {
     (
         cd /omd/sites || return
 
-        _sites_cmd() {
+        # The files within a site are site-user writable! Therefore we must not use them!
+        # The version files are only root writable so we can use them instead.
+        site_version() {
+            printf "%s" "$(realpath "${1}/version" | sed 's|.*/||')"
+        }
+
+        site_cmd() {
             # DO NOT ACCESS /omd/sites/${site}/bin/cmd directly.
             # bin might point anywhere -> priv escalation.
-            printf "/omd/versions/%s/bin/%s" "$(realpath "${1}/version" | sed 's|.*/||')" "${2}"
+            printf "/omd/versions/%s/bin/%s" "$(site_version "${1}")" "${2}"
+        }
+
+        site_lib() {
+            printf "/omd/versions/%s/lib" "$(site_version "${1}")"
+        }
+
+        waitmax_for_unixcat_with_site_ld_library_path() {
+            LD_LIBRARY_PATH="$(site_lib "${2}"):${LD_LIBRARY_PATH}" waitmax "${1}" "$(site_cmd "${2}" unixcat)" "/omd/sites/${2}/tmp/run/${3}"
         }
 
         echo '<<<livestatus_status:sep(59)>>>'
@@ -1120,7 +1295,7 @@ section_omd_core() {
             if [ -S "/omd/sites/${site}/tmp/run/live" ]; then
                 echo "[${site}]"
                 echo "GET status" |
-                    waitmax 3 "$(_sites_cmd "${site}" unixcat)" "/omd/sites/${site}/tmp/run/live"
+                    waitmax_for_unixcat_with_site_ld_library_path 3 "${site}" "live"
             fi
         done
 
@@ -1140,7 +1315,7 @@ section_omd_core() {
             if [ -S "/omd/sites/${site}/tmp/run/mkeventd/status" ]; then
                 echo "[\"${site}\"]"
                 (echo "GET status" && echo "OutputFormat: json") |
-                    waitmax 3 "$(_sites_cmd "${site}" unixcat)" "/omd/sites/${site}/tmp/run/mkeventd/status"
+                    waitmax_for_unixcat_with_site_ld_library_path 3 "${site}" "mkeventd/status"
             fi
         done
 
@@ -1148,7 +1323,7 @@ section_omd_core() {
         for site in *; do
             if [ -S "/omd/sites/${site}/tmp/run/live" ]; then
                 echo "[${site}]"
-                waitmax 5 "$(_sites_cmd "${site}" unixcat)" "/omd/sites/${site}/tmp/run/live" <<LimitString
+                waitmax_for_unixcat_with_site_ld_library_path 5 "${site}" "live" <<LimitString
 GET hosts
 Stats: state = 0
 Stats: scheduled_downtime_depth = 0
@@ -1162,7 +1337,7 @@ StatsAnd: 2
 Stats: scheduled_downtime_depth > 0
 Filter: custom_variable_names < _REALNAME
 LimitString
-                waitmax 5 "$(_sites_cmd "${site}" unixcat)" "/omd/sites/${site}/tmp/run/live" <<LimitString
+                waitmax_for_unixcat_with_site_ld_library_path 5 "${site}" "live" <<LimitString
 GET services
 Stats: state = 0
 Stats: scheduled_downtime_depth = 0
@@ -1236,24 +1411,6 @@ section_mkbackup() {
     fi
 }
 
-section_job() {
-    (
-        cd "${MK_VARDIR}/job" 2>/dev/null || return
-        echo '<<<job>>>'
-        for username in *; do
-            (
-                # the return below only terminates the subshell, not the entire function
-                cd "${username}" 2>/dev/null || return
-                if [ "$(id -u)" -eq 0 ]; then
-                    su -s "${SHELL}" "${username}" -c "head -n -0 -v *"
-                else
-                    head -n -0 -v ./*
-                fi
-            )
-        done
-    )
-}
-
 section_thermal() {
     if [ -z "${IS_DOCKERIZED}" ] && [ -z "${IS_LXC_CONTAINER}" ] && ls /sys/class/thermal/thermal_zone* >/dev/null 2>&1; then
         echo '<<<lnx_thermal:sep(124)>>>'
@@ -1312,6 +1469,32 @@ section_haproxy() {
 # BEGIN COMMON AGENT CODE
 #
 
+section_job() {
+    # Get statistics about monitored jobs.
+
+    _cat_files() {
+        # read file names from stdin and write like `head -n -0 -v file`
+        while read -r file; do
+            printf "==> %s <==\n" "${file##./}"
+            cat "${file}"
+        done
+    }
+
+    (
+        cd "${MK_VARDIR}/job" 2>/dev/null || return
+        printf "<<<job>>>\n"
+        for user in *; do
+            (
+                cd "${user}" 2>/dev/null || return # return from subshell only
+                # This folder is owned (and thus writable) by the user that ran the jobs.
+                # The agent (root) must not read files that are not owned by the user.
+                # This prevents symlink or hardlink attacks.
+                find -L . -type f -user "${user}" | _cat_files
+            )
+        done
+    )
+}
+
 section_fileinfo() {
     # fileinfo check: put patterns for files into /etc/check_mk/fileinfo.cfg
     perl -e '
@@ -1331,19 +1514,20 @@ section_fileinfo() {
     }
     exit if ! @patterns;
 
-    print "<<<fileinfo:sep(124)>>>\n", time, "\n[[[header]]]\nname|status|size|time\n[[[content]]]\n";
-
+    my $file_stats = "";
     foreach (@patterns) {
         foreach (bsd_glob("$_")) {
             if (! -f) {
-                print "$_|missing\n" if ! -d;
+                $file_stats .= "$_|missing\n" if ! -d;
             } elsif (my @infos = stat) {
-                print "$_|ok|$infos[7]|$infos[9]\n";
+                $file_stats .= "$_|ok|$infos[7]|$infos[9]\n";
             } else {
-                print "$_|stat failed: $!\n";
+                $file_stats .= "$_|stat failed: $!\n";
             }
         }
     }
+
+    print "<<<fileinfo:sep(124)>>>\n", time, "\n[[[header]]]\nname|status|size|time\n[[[content]]]\n$file_stats";
     ' -- "${MK_CONFDIR}"
 }
 
@@ -1355,7 +1539,7 @@ section_fileinfo() {
 
 get_ntpq() {
     inpath ntpq || return 1
-    run_cached "ntp" 30 "echo '<<<ntp>>>'; waitmax 5 ntpq -np | sed -e 1,2d -e 's/^\(.\)/\1 /' -e 's/^ /%/' || true" | sed 's/\(<<<ntp:cached(.*,\)30)>>>/\1120)>>>/'
+    _run_cached_internal "ntp" 30 120 200 20 "echo '<<<ntp>>>'; waitmax 5 ntpq -np | sed -e 1,2d -e 's/^\(.\)/\1 /' -e 's/^ /%/' || true"
 }
 
 section_timesyncd() {
@@ -1374,7 +1558,16 @@ section_timesyncd() {
 
     echo "<<<timesyncd>>>"
     timedatectl timesync-status
-    get_file_mtime /var/lib/systemd/timesync/clock | awk '{print "[[["$1"]]]"}'
+    # /run/systemd/timesync/synchronized is a more reliable/the correct file to look at for > systemd v250
+    if [ -f "/run/systemd/timesync/synchronized" ]; then
+        get_file_mtime /run/systemd/timesync/synchronized | awk '{print "[[["$1"]]]"}'
+    else
+        get_file_mtime /var/lib/systemd/timesync/clock | awk '{print "[[["$1"]]]"}'
+    fi
+
+    echo "<<<timesyncd_ntpmessage:sep(10)>>>"
+    timedatectl show-timesync | awk '/NTPMessage/{print $0}'
+    timedatectl show | awk '/Timezone/{print $0}'
     return 0 # intended not to execute section_ntp even in the case where get_file_mtime fails
 }
 
@@ -1421,24 +1614,21 @@ run_real_time_checks() {
     # shellcheck source=agents/cfg_examples/real_time_checks.cfg
     . "${MK_CONFDIR}/real_time_checks.cfg" 2>/dev/null || return
 
-    # new mechanism to set the passphrase has priority
-    secret="${PASSPHRASE:-"${RTC_SECRET}"}"
-
-    if [ "${ENCRYPTED_RT}" != "no" ]; then
-        [ -n "${secret}" ] || {
-            echo "ERROR: Missing secret, but encryption is requested. Not sending real-time data." >&2
-            return
-        }
+    if [ -z "${RTC_SECRET}" ]; then
+        define_optionally_encrypt "no"
+    else
         inpath openssl || {
             echo "ERROR: openssl command is missing, but encryption is requested. Not sending real-time data." >&2
             return
         }
+        define_optionally_encrypt "yes"
     fi
 
-    define_optionally_encrypt "${ENCRYPTED_RT}"
     for trigger in "${MK_VARDIR}/rtc_remotes/"?*; do
         # no such file => no expansion of ?* => nothing to do
-        [ -e "${trigger}" ] && run_real_time_checks_for_remote "${trigger}" "${secret}" >/dev/null &
+        # braces are needed so run_real_time_checks_for_remote can be forked away
+        # otherwise async execution of check plugins is held off by activated realtime checks.
+        [ -e "${trigger}" ] && { run_real_time_checks_for_remote "${trigger}" "${RTC_SECRET}" >/dev/null & }
     done
 }
 
@@ -1505,90 +1695,54 @@ run_real_time_checks_for_remote() {
     done
 }
 
-_non_comment_lines() {
-    grep -Ev '^[[:space:]]*($|#)' "${1}"
-}
-
-_mrpe_get_interval() {
-    echo "${1}" | grep -Eo '^\([^)]*\)' | grep -Eo 'interval=[^:)]*' | cut -d= -f2
-}
-
-run_remote_plugins() {
-    configfile="${1}"
-    prefix="${2}"
-    [ -f "${configfile}" ] || return
-
-    _non_comment_lines "${configfile}" | while read -r descr rest; do
-        interval="$(_mrpe_get_interval "${rest}")"
-        cmdline="${rest#(*) }"
-
-        if [ -n "${prefix}" ]; then
-            cmdline="${prefix}'${cmdline}'"
-        fi
-
-        if [ -z "${interval}" ]; then
-            ${MK_RUN_SYNC_PARTS} && run_mrpe "${descr}" "${cmdline}"
-        else
-            run_cached "mrpe_${descr}" "${interval}" "run_mrpe '${descr}' '${cmdline}'"
-        fi
-
-    done
-}
-
-run_runas_executor() {
-    [ -f "${MK_CONFDIR}/runas.cfg" ] || return
-
-    _non_comment_lines "${MK_CONFDIR}/runas.cfg" | while read -r type user configfile; do
-        prefix=""
-        if [ "${user}" != "-" ]; then
-            prefix="su ${user} -c "
-        fi
-
-        # mrpe includes
-        if [ "${type}" = "mrpe" ]; then
-            run_remote_plugins "${configfile}" "${prefix}"
-
-        # local and plugin includes
-        elif [ "${type}" = "local" ] || [ "${type}" = "plugin" ]; then
-            if ${MK_RUN_SYNC_PARTS}; then
-                if [ "${type}" = "local" ]; then
-                    echo "<<<local:sep(0)>>>"
-                fi
-
-                find "${configfile}/" -executable -type f |
-                    while read -r filename; do
-                        if [ -n "${prefix}" ]; then
-                            cmdline="${prefix}\"${filename}\""
-                        else
-                            cmdline=${filename}
-                        fi
-
-                        _log_section_time "${cmdline}"
-                    done
-            fi
-        fi
-    done
-}
-
-# Run a command asynchronous by use of a cache file.
-# Usage: run_cached NAME MAXAGE [COMMAND ...]
-#   NAME     name of the section (also used as cache file name)
-#   MAXAGE   maximum cache livetime in seconds
-#   COMMAND  command to run
 #
-# Note that while multiple COMMAND arguments are considered, they are evaluated in a string.
-# This means that extra escaping is required.
-# For example: to run `cat "My File"` every two minutes, you'll have to call
+# BEGIN COMMON AGENT CODE
 #
-#     run_cached "my_file_output" 120 "cat \"My File\""
-#
+
 run_cached() {
+    # Compatibility wrapper for plugins that might use run_cached.
+    # We should have never exposed this as quasi API.
     NAME="${1}"
     MAXAGE="${2}"
-    shift 2
-    # ideally, these should be independent parameters:
-    TIMEOUT=$((MAXAGE * 2))
-    REFRESH_INTERVAL="${MAXAGE}"
+    REFRESH_INTERVAL="${3}"
+    shift 3
+
+    OUTPUT_TIMEOUT=$((MAXAGE * 3))
+    CREATION_TIMEOUT=$((MAXAGE * 2))
+
+    _run_cached_internal "${NAME}" "${REFRESH_INTERVAL}" "${MAXAGE}" "${OUTPUT_TIMEOUT}" "${CREATION_TIMEOUT}" "$@"
+}
+
+_run_cached_internal() {
+    # Run a command asynchronous by use of a cache file.
+    # Usage: _run_cached_internal NAME REFRESH_INTERVAL MAXAGE OUTPUT_TIMEOUT OUTPUT_TIMEOUT CREATION_TIMEOUT [COMMAND ...]
+    # Note that while multiple COMMAND arguments are considered, they are evaluated in a string.
+    # This means that extra escaping is required.
+    # For example:
+    # To run a cat command every two minutes, considering the created data valid for one three minutes,
+    # send the created data for four minutes and allowing the command to run for 12 minutes, you'll have to call
+    #
+    #   _run_cached_interal "my_file_content" 120 180 240 720 "cat \"My File\""
+    #
+    # Mind the escaping...
+
+    NAME="${1}"
+    # name of the section (also used as cache file name)
+
+    REFRESH_INTERVAL="${2}"
+    # threshold in seconds when the cache file needs to be regenerated
+
+    MAXAGE="${3}"
+    # maximum cache livetime in seconds
+
+    OUTPUT_TIMEOUT="${4}"
+    # threshold in seconds for how long the cache file will be output (regardless of whether it is outdated)
+
+    CREATION_TIMEOUT="${5}"
+    # threshold in seconds for how long the process is allowed to be running before it is killed (see below for details)
+
+    shift 5
+    # $* is now the command to run
 
     if ${DISABLE_CACHING:-false}; then
         # We need the re-splitting to be compatible with the caching case, so:
@@ -1599,33 +1753,50 @@ run_cached() {
 
     [ -d "${MK_VARDIR}/cache" ] || mkdir -p "${MK_VARDIR}/cache"
     CACHEFILE="${MK_VARDIR}/cache/${NAME}.cache"
+    FAIL_REPORT_FILE="${SPOOLDIR}/${NAME}.cachefail"
 
     NOW="$(get_epoch)"
-    MTIME=$(get_file_mtime "${CACHEFILE}" 2>/dev/null) || MTIME=0
+    MTIME="$(get_file_mtime "${CACHEFILE}" 2>/dev/null)" || MTIME=0
 
-    if ${MK_RUN_SYNC_PARTS} && [ -s "${CACHEFILE}" ]; then
-
-        # Output the file (even if it is outdated)
-        CACHE_INFO="cached(${MTIME},${MAXAGE})"
-        if [ "${NAME%%_*}" = "local" ] || [ "${NAME%%_*}" = "mrpe" ]; then
-            # prefix CACHE_INFO, but skip any headers and lines with existing CACHE_INFO
-            sed -e "/^<<<.*>>>/{p;d;}; /^cached([0-9]*,[0-9]*) /{p;d;}; s/^/${CACHE_INFO} /" "${CACHEFILE}"
-        else
-            # insert CACHE_INFO in header, but skip headers with existing CACHE_INFO
-            sed -e '/^<<<.*\(:cached(\).*>>>/{p;d;}; s/^<<<\([^>]*\)>>>$/<<<\1:'"${CACHE_INFO}"'>>>/' "${CACHEFILE}"
+    if ${MK_RUN_SYNC_PARTS}; then
+        if [ -s "${CACHEFILE}" ] && [ $((NOW - MTIME)) -le "${OUTPUT_TIMEOUT}" ]; then
+            # Output the file (if it is not too outdated)
+            CACHE_INFO="cached(${MTIME},${MAXAGE})"
+            # prefix or insert cache info, unless already present.
+            # WATCH OUT: AIX does not allow us to pass this as a single '-e' option!
+            if [ "${NAME%%_*}" = "local" ] || [ "${NAME%%_*}" = "mrpe" ]; then
+                sed -e '/^<<<.*>>>/{p;d;}' -e '/^cached([0-9]*,[0-9]*) /{p;d;}' -e "s/^/${CACHE_INFO} /" "${CACHEFILE}"
+            else
+                sed -e '/^<<<.*\(:cached(\).*>>>/{p;d;}' -e 's/^<<<\([^>]*\)>>>$/<<<\1:'"${CACHE_INFO}"'>>>/' "${CACHEFILE}"
+            fi
         fi
 
     fi
 
     if ${MK_RUN_ASYNC_PARTS}; then
-
-        # Check if the creation of the cache takes suspiciously long.
-        # Kill the process if the cache file has not been accessed for more than TIMEOUT seconds.
+        # Kill the process if it is running too long (cache file not accessed for more than CREATION_TIMEOUT seconds).
+        # If killing succeeds, remove CACHFILE.new.PID.
+        # Write info about the timed out process and the kill attempt to the SPOOLDIR.
+        # It will be reported to the server in the next (synchronous) agent execution.
+        # The file will be deleted as soon as the plugin/local check is functional again.
+        # Do not output the file here, it will interrupt the local and mrpe sections, as well as any other
+        # partially cached section.
         for cfile in "${CACHEFILE}.new."*; do
             [ -e "${cfile}" ] || break # no match
-            if [ $((NOW - $(get_file_atime "${cfile}"))) -ge "${TIMEOUT}" ]; then
-                kill -9 "${cfile##*.new.}" # TODO: what about child processes?
-                rm -f "${cfile}"
+            TRYING_SINCE="$(get_file_atime "${cfile}")"
+            [ -n "${TRYING_SINCE}" ] || break # race condition: file vanished
+            if [ $((NOW - TRYING_SINCE)) -ge "${CREATION_TIMEOUT}" ]; then
+                {
+                    printf "<<<checkmk_cached_plugins:sep(124)>>>\n"
+                    pid="${cfile##*.new.}"
+                    printf "timeout|%s|%s|%s\n" "${NAME}" "${CREATION_TIMEOUT}" "${pid}"
+                    kill -9 "${pid}" >/dev/null 2>&1 && sleep 2 # TODO: what about child processes?
+                    if [ -n "$(ps -o args= -p "${pid}")" ]; then
+                        printf "killfailed|%s|%s|%s\n" "${NAME}" "${CREATION_TIMEOUT}" "${pid}"
+                    else
+                        rm -f "${cfile}"
+                    fi
+                } >"${FAIL_REPORT_FILE}" 2>&1
             fi
         done
 
@@ -1639,26 +1810,18 @@ run_cached() {
 
         # Time to refresh cache file and new job not yet running?
         if [ $((NOW - MTIME)) -gt "${REFRESH_INTERVAL}" ] && [ ! -e "$(_cfile_in_use)" ]; then
-            THIS_SHELL="$(ps -o cmd= -p $$ | cut -d' ' -f1)"
             # Start it. If the command fails the output is thrown away
-            cat <<HERE | nohup "${THIS_SHELL}" >/dev/null 2>&1 &
+            cat <<HERE | nohup "${CURRENT_SHELL}" >/dev/null 2>&1 &
 eval '${MK_DEFINE_LOG_SECTION_TIME}'
 exec > "${CACHEFILE}.new.\$\$" || exit 1
-$* && mv "${CACHEFILE}.new.\$\$" "${CACHEFILE}" || rm -f "${CACHEFILE}" "${CACHEFILE}.new.\$\$"
+$* && mv -f "${CACHEFILE}.new.\$\$" "${CACHEFILE}" && rm -f "${FAIL_REPORT_FILE}" || rm -f "${CACHEFILE}.new.\$\$"
 HERE
         fi
 
     fi
 
-    unset NAME MAXAGE TIMEOUT REFRESH_INTERVAL CACHEFILE MTIME CACHE_INFO
+    unset NAME MAXAGE CREATION_TIMEOUT REFRESH_INTERVAL CACHEFILE NOW MTIME CACHE_INFO TRYING_SINCE OUTPUT_TIMEOUT
 }
-
-# Make run_cached available for subshells (plugins, local checks, etc.)
-export -f run_cached
-
-#
-# BEGIN COMMON AGENT CODE
-#
 
 run_local_checks() {
     cd "${LOCALDIR}" || return
@@ -1675,7 +1838,8 @@ run_local_checks() {
     # Call some local checks only every X'th second
     for script in [1-9]*/*; do
         if is_valid_plugin "${script}"; then
-            run_cached "local_${script##*/}" "${script%/*}" "_log_section_time '${script}'"
+            interval="${script%/*}"
+            _run_cached_internal "local_${script##*/}" "${interval}" "${interval}" $((interval * 3)) $((interval * 2)) "_log_section_time '${script}'"
         fi
     done
 }
@@ -1718,7 +1882,7 @@ get_plugin_interpreter() {
         return 0
     fi
 
-    if [ "${filename#${filename%??}}" != "_2" ]; then
+    if [ "${filename#"${filename%??}"}" != "_2" ]; then
         if [ -n "${NO_PYTHON}" ] || [ -n "${WRONG_PYTHON_COMMAND}" ]; then
             section_checkmk_failed_plugin "${agent_plugin}"
             return 1
@@ -1770,16 +1934,51 @@ run_plugins() {
     for script in [1-9]*/*; do
         if is_valid_plugin "${script}"; then
             if plugin_interpreter=$(get_plugin_interpreter "${script}"); then
+                interval="${script%/*}"
                 # shellcheck disable=SC2086
-                run_cached "plugins_${script##*/}" "${script%/*}" _log_section_time ${plugin_interpreter} "${script}"
+                _run_cached_internal "plugins_${script##*/}" "${interval}" "${interval}" $((interval * 3)) $((interval * 2)) _log_section_time ${plugin_interpreter} "${script}"
             fi
         fi
     done
 }
 
-#
-# END COMMON AGENT CODE
-#
+_non_comment_lines() {
+    grep -Ev '^[[:space:]]*($|#)' "${1}"
+}
+
+_mrpe_get_interval() {
+    echo "${1}" | grep -E '^\([^)]*\)' | sed -n 's/^.*interval=\([^:)]*\).*$/\1/p'
+}
+
+_mrpe_normalize_spaces() {
+    # watch out:
+    # * [:blank:] does not include \t on AIX
+    # * [:space:] does include \n on Linux
+    tr -s '\t' ' '
+}
+
+run_remote_plugins() {
+    configfile="${1}"
+    prefix="${2}"
+    [ -f "${configfile}" ] || return
+
+    _non_comment_lines "${configfile}" | _mrpe_normalize_spaces | while read -r descr rest; do
+        interval="$(_mrpe_get_interval "${rest}")"
+        cmdline="${rest#\(*\) }"
+
+        if [ -n "${prefix}" ]; then
+            cmdline="${prefix} '${cmdline}'"
+        fi
+
+        if [ -z "${interval}" ]; then
+            ${MK_RUN_SYNC_PARTS} && run_mrpe "${descr}" "${cmdline}"
+        else
+            # Sourcing the agent here is not very performant, but we need 'run_mrpe', and not all shells support exporting of functions.
+            _run_cached_internal "mrpe_${descr}" "${interval}" "${interval}" $((interval * 3)) $((interval * 2)) "MK_SOURCE_AGENT=yes . '${0}'; run_mrpe \"${descr}\" \"${cmdline}\""
+        fi
+
+    done
+}
 
 run_mrpe() {
     descr="${1}"
@@ -1793,10 +1992,48 @@ run_mrpe() {
     printf "(%s) %s %s %s" "${PLUGIN##*/}" "${descr}" "${STATUS}" "${OUTPUT}" | tr \\n \\1
     printf "\n"
 
-    unset -v descr PLUGIN OUTPUT STATUS
+    unset descr PLUGIN OUTPUT STATUS
 }
 
-export -f run_mrpe
+#
+# END COMMON AGENT CODE
+#
+
+run_runas_executor() {
+    [ -f "${MK_CONFDIR}/runas.cfg" ] || return
+
+    _non_comment_lines "${MK_CONFDIR}/runas.cfg" | while read -r type user configfile; do
+        prefix=""
+        if [ "${user}" != "-" ]; then
+            prefix="su ${user} -c"
+        fi
+
+        # mrpe includes
+        if [ "${type}" = "mrpe" ]; then
+            run_remote_plugins "${configfile}" "${prefix}"
+
+        # local and plugin includes
+        elif [ "${type}" = "local" ] || [ "${type}" = "plugin" ]; then
+            if ${MK_RUN_SYNC_PARTS}; then
+                if [ "${type}" = "local" ]; then
+                    echo "<<<local:sep(0)>>>"
+                fi
+
+                find "${configfile}" -executable -type f |
+                    while read -r filename; do
+                        if [ -n "${prefix}" ]; then
+                            # SC2086: We don't want to quote since prefix should not be treated as a
+                            # single string but as multiple arguments passed to _log_section_time
+                            # shellcheck disable=SC2086
+                            _log_section_time ${prefix} "${filename}"
+                        else
+                            _log_section_time "${filename}"
+                        fi
+                    done
+            fi
+        fi
+    done
+}
 
 run_purely_synchronous_sections() {
     _log_section_time section_checkmk
@@ -1817,7 +2054,7 @@ run_purely_synchronous_sections() {
     # Check NFS mounts by accessing them with stat -f (System
     # call statfs()). If this lasts more then 2 seconds we
     # consider it as hanging. We need waitmax.
-    [ -z "${MK_SKIP_NFS_MOUNTS}" ] && _log_section_time section_nfs_mounts
+    [ -z "${MK_SKIP_NFS_MOUNTS}" ] && _log_section_time section_nfs_mounts "/proc/mounts"
 
     # Check mount options. Filesystems may switch to 'ro' in case
     # of a read error.
@@ -1962,12 +2199,19 @@ main_setup() {
 
     set_up_remote
 
-    # close stdin and tempotarily disable stderr
-    exec </dev/null 9>&2 2>/dev/null
+    # close stdin
+    exec </dev/null
 
     set_up_process_commandline_arguments "$@"
 
+    # close stderr unless explicitly configured to stay open
+    if "${DISABLE_STDERR:-true}"; then
+        exec 2>/dev/null
+    fi
+
     set_up_get_epoch
+
+    set_up_current_shell
 
     set_variable_defaults
 
@@ -1982,6 +2226,7 @@ main_setup() {
     set_up_encryption
     set_up_disabled_sections
 
+    export_utility_functions
 }
 
 main_sync_parts() {
@@ -1993,26 +2238,15 @@ main_sync_parts() {
 }
 
 main_mixed_parts() {
+
     run_partially_asynchronous_sections
 
-    # MK's Remote Plugin Executor
-    # run_remote_plugins -> run_mrpe -> _log_section_time CMD
-    #                    -> run_cached _log_section_time CMD
     run_remote_plugins "${MK_CONFDIR}/mrpe.cfg" ""
 
-    # MK's runas Executor
-    # run_runas_executor -> _log_section_time CMD
-    #                    -> run_mrpe -> _log_section_time CMD
-    #                    -> run_cached _log_section_time CMD
     run_runas_executor
 
-    # Local checks
-    # run_local_checks -> _log_section_time CMD
-    #                  -> run_cached _log_section_time CMD
     run_local_checks
 
-    # Plugins
-    # run_plugins -> _log_section_time CMD
     run_plugins
 }
 

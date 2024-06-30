@@ -1,5 +1,6 @@
 [Unit]
 Description=TCP Checkmk Agent Socket
+Documentation=https://docs.checkmk.com/latest/en/agent_linux.html
 
 [Socket]
 ListenStream=6556
@@ -8,7 +9,8 @@ Accept=true
 # queries from one source we set this parameter. It limits the number of
 # concurrent connections per source address. If you need more requests
 # per source system, you can of course increase or remove this value
-# (https://github.com/tribe29/checkmk/pull/157)
+# (https://github.com/checkmk/checkmk/pull/157)
+# added v232
 MaxConnectionsPerSource=3
 
 [Install]
