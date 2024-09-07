@@ -12,33 +12,32 @@
     dest: /root/
     owner: root
     group: root
-    mode: '700'
+    mode: "700"
 
 ### You can skip these two.
-### `certbot.service` and `certbot.timer` now come installed with the `certbot` package.
-### You still need to start and enable `certbot.timer` though!
+### `certbot-renew.service` and `certbot-renew.timer` now come installed with the `certbot` package.
+### You still need to start and enable `certbot-renew.timer` though!
 # - name: service
 #   ansible.builtin.copy:
-#     src: files/certbot.service
-#     dest: /etc/systemd/system/certbot.service
+#     src: files/certbot-renew.service
+#     dest: /etc/systemd/system/certbot-renew.service
 #     owner: root
 #     group: root
 #     mode: '644'
 #
 # - name: timer
 #   ansible.builtin.copy:
-#     src: files/certbot.timer
-#     dest: /etc/systemd/system/certbot.timer
+#     src: files/certbot-renew.timer
+#     dest: /etc/systemd/system/certbot-renew.timer
 #     owner: root
 #     group: root
 #     mode: '644'
 
-- name: ensure certbot.timer is started and enabled at boot
+- name: ensure certbot-renew.timer is started and enabled at boot
   ansible.builtin.systemd:
-    name: certbot.timer
+    name: certbot-renew.timer
     state: started
     enabled: yes
 
 - name: run get-certs
   command: "/root/certbot/get-certs.sh"
-
