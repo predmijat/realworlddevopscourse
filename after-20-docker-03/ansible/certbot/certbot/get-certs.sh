@@ -3,14 +3,12 @@
 set -x
 
 certbot certonly \
-    --quiet \
-    --agree-tos \
-    --email udemypredrag@gmail.com \
-    --dns-linode \
-    --dns-linode-credentials /root/certbot/credentials.ini \
-    --dns-linode-propagation-seconds 1000 \
-    --domain '*.do-p.com'
-
+  --quiet \
+  --agree-tos \
+  --email udemypredrag@gmail.com \
+  --dns-linode \
+  --dns-linode-credentials /root/certbot/credentials.ini \
+  --domain '*.do-p.com'
 
 # If you need multiple domains in iRedMail
 # uncomment the section below and adjust '--domain'.
