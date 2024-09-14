@@ -1,0 +1,70 @@
+services:
+  gitlab:
+    container_name: ${container_name}
+    hostname: ${hostname_gitlab}
+    image: ${docker_image}:${docker_image_tag}
+    restart: unless-stopped
+    ports:
+      - "44822:22"
+    volumes:
+      - ./config:/etc/gitlab
+      - ./logs:/var/log/gitlab
+      - ./data:/var/opt/gitlab
+      - ${backups_directory_secrets}:/secret/gitlab/backups
+    networks:
+      - web
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.${service_gitlab}.rule=Host(`${hostname_gitlab}`)"
+      - "traefik.http.routers.${service_gitlab}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${service_gitlab}.entrypoints=https"
+      - "traefik.http.routers.${service_gitlab}.service=${service_gitlab}"
+      - "traefik.http.services.${service_gitlab}.loadbalancer.server.port=80"
+      - "traefik.http.routers.${service_gitlab}.middlewares=${service_gitlab}-allowlist"
+      - "traefik.http.middlewares.${service_gitlab}-allowlist.ipallowlist.sourcerange=${ip_allowlist}"
+      # docker-registry
+      - "traefik.http.routers.${service_registry}.rule=Host(`${hostname_registry}`)"
+      - "traefik.http.routers.${service_registry}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${service_registry}.entrypoints=https"
+      - "traefik.http.routers.${service_registry}.service=${service_registry}"
+      - "traefik.http.services.${service_registry}.loadbalancer.server.port=5050"
+      - "traefik.http.routers.${service_registry}.middlewares=${service_registry}-allowlist"
+      - "traefik.http.middlewares.${service_registry}-allowlist.ipallowlist.sourcerange=${ip_allowlist}"
+
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url "${gitlab_external_url}"
+        gitlab_rails['initial_root_password'] = "${initial_root_password}"
+        gitlab_rails['lfs_enabled'] = true
+        gitlab_rails['smtp_enable'] = true
+        gitlab_rails['smtp_address'] = "${smtp_address}"
+        gitlab_rails['smtp_port'] = "${smtp_port}"
+        gitlab_rails['smtp_user_name'] = "${smtp_username}"
+        gitlab_rails['smtp_password'] = "${smtp_password}"
+        gitlab_rails['smtp_domain'] = "${smtp_domain}"
+        gitlab_rails['smtp_authentication'] = "plain"
+        gitlab_rails['smtp_enable_starttls_auto'] = true
+        gitlab_rails['smtp_tls'] = false
+        puma['worker_processes'] = 4
+        prometheus_monitoring['enable'] = false
+        nginx['redirect_http_to_https'] = false
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        nginx['client_max_body_size'] = "2G"
+        nginx['real_ip_trusted_addresses'] = ${trusted_subnets}
+        nginx['real_ip_header'] = 'X-Forwarded-For'
+        nginx['real_ip_recursive'] = 'on'
+        registry['enable'] = true
+        registry_external_url "${gitlab_registry_url}"
+        registry_nginx['listen_port'] = 5050
+        registry_nginx['listen_https'] = false
+
+networks:
+  web:
+    external: true

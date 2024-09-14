@@ -1,0 +1,53 @@
+services:
+  checkmk:
+    container_name: ${container_name}
+    hostname: ${hostname}
+    image: ${docker_image}:${docker_image_tag}
+    restart: unless-stopped
+    tmpfs:
+      - /opt/omd/sites/cmk/tmp:uid=1000,gid=1000
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./sites:/omd/sites
+    environment:
+      MAIL_RELAY_HOST: mailer
+    networks:
+      - web
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.${service}.rule=Host(`${hostname}`)"
+      - "traefik.http.routers.${service}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${service}.entrypoints=https"
+      - "traefik.http.services.${service}.loadbalancer.server.port=5000"
+        #- "traefik.http.routers.${service}.middlewares=${service}-allowlist"
+        #- "traefik.http.middlewares.${service}-allowlist.ipallowlist.sourcerange=${ip_allowlist}"
+
+  mailer:
+    image: namshi/smtp
+    container_name: mailer
+    hostname: ${mailer_hostname}
+    restart: always
+    environment:
+      DISABLE_IPV6: true
+      SMARTHOST_ADDRESS: ${smarthost_address}
+      SMARTHOST_PORT: ${smarthost_port}
+      SMARTHOST_USER: ${smarthost_user}
+      SMARTHOST_PASSWORD: ${smarthost_password}
+      SMARTHOST_ALIASES: ${smarthost_aliases}
+    networks:
+      - web
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  web:
+    external: true

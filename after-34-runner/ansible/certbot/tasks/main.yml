@@ -1,0 +1,43 @@
+- name: install packages
+  community.general.pacman:
+    update_cache: yes
+    name:
+      - certbot
+      - certbot-dns-linode
+    state: present
+
+- name: certbot
+  ansible.builtin.copy:
+    src: certbot
+    dest: /root/
+    owner: root
+    group: root
+    mode: "700"
+
+### You can skip these two.
+### `certbot-renew.service` and `certbot-renew.timer` now come installed with the `certbot` package.
+### You still need to start and enable `certbot-renew.timer` though!
+# - name: service
+#   ansible.builtin.copy:
+#     src: files/certbot-renew.service
+#     dest: /etc/systemd/system/certbot-renew.service
+#     owner: root
+#     group: root
+#     mode: '644'
+#
+# - name: timer
+#   ansible.builtin.copy:
+#     src: files/certbot-renew.timer
+#     dest: /etc/systemd/system/certbot-renew.timer
+#     owner: root
+#     group: root
+#     mode: '644'
+
+- name: ensure certbot-renew.timer is started and enabled at boot
+  ansible.builtin.systemd:
+    name: certbot-renew.timer
+    state: started
+    enabled: yes
+
+- name: run get-certs
+  command: "/root/certbot/get-certs.sh"

@@ -1,0 +1,17 @@
+- name: copy DDL for backups
+  ansible.builtin.copy:
+    src: files/backups.sql
+    dest: /tmp/backups.sql
+    owner: root
+    group: root
+    mode: '644'
+
+- name: create databases
+  community.mysql.mysql_db:
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    name:
+      - backups
+    state: import
+    target: /tmp/backups.sql
+  no_log: true
