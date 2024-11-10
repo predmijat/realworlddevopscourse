@@ -12,43 +12,46 @@ automation_secret="${automation_secret}"
 
 # Add host
 curl \
-	--request POST \
-	--header "Authorization: Bearer automation ${automation_secret}" \
-	--header "Accept: application/json" \
-	--header "Content-Type: application/json" \
-	--data '{
+  --request POST \
+  --header "Authorization: Bearer automation ${automation_secret}" \
+  --header "Accept: application/json" \
+  --header "Content-Type: application/json" \
+  --data '{
         "attributes": {
             "ipaddress": "'"${ip_address}"'"
         },
         "folder": "/",
         "host_name": "'"${host}"'"
     }' \
-	"${checkmk_api_url}"/domain-types/host_config/collections/all
+  "${checkmk_api_url}"/domain-types/host_config/collections/all
 
 # Scan for services
 curl \
-	--request POST \
-	--header "Authorization: Bearer automation ${automation_secret}" \
-	--header "Accept: application/json" \
-	--header "Content-Type: application/json" \
-	--data '{
+  --request POST \
+  --header "Authorization: Bearer automation ${automation_secret}" \
+  --header "Accept: application/json" \
+  --header "Content-Type: application/json" \
+  --data '{
         "host_name": "'"${host}"'",
         "mode": "tabula_rasa"
     }' \
-	"${checkmk_api_url}"/domain-types/service_discovery_run/actions/start/invoke
+  "${checkmk_api_url}"/domain-types/service_discovery_run/actions/start/invoke
+
+# Give checkmk enough time to scan for services before activating changes
+sleep 10
 
 # Activate changes
 curl \
-	--request POST \
-	--header "Authorization: Bearer automation ${automation_secret}" \
-	--header "Accept: application/json" \
-	--header "Content-Type: application/json" \
-	--header "If-Match: "*"" \
-	--data '{
+  --request POST \
+  --header "Authorization: Bearer automation ${automation_secret}" \
+  --header "Accept: application/json" \
+  --header "Content-Type: application/json" \
+  --header "If-Match: "*"" \
+  --data '{
         "force_foreign_changes": false,
         "redirect": false,
         "sites": [
             "cmk"
         ]
     }' \
-	"${checkmk_api_url}"/domain-types/activation_run/actions/activate-changes/invoke
+  "${checkmk_api_url}"/domain-types/activation_run/actions/activate-changes/invoke
