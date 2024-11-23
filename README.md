@@ -16,7 +16,7 @@ Each directory contains `errata.md` so be sure to check that out.
 
 #### Slides
 
-You probably don't need this since all links are available on Udemy in video's "Resources" tab, but if you want to view the slides (`presentation.slide`), you'll need Go's [present](https://pkg.go.dev/golang.org/x/tools/present) package.
+You'll need Go's [present](https://pkg.go.dev/golang.org/x/tools/present) package.
 
 Install [Go](https://go.dev/).
 
