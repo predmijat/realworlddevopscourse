@@ -10,6 +10,8 @@ but you should also check if Udemy is offering a better discount at that moment.
 All details are available on [Udemy](https://www.udemy.com/course/real-world-devops-project-from-start-to-finish/?referralCode=9AC467077593D22878A2) page, and I encourage you to watch the
 "free preview" videos before purchasing the course. You can watch around 30 minutes for free, which should be enough to figure out if you like it or not.
 
+It's also available on [Packt](https://www.packtpub.com/en-us/product/real-world-devops-project-with-ansible-docker-and-gitlab-9781835083956).
+
 #### Errata
 
 Each directory contains `errata.md` so be sure to check that out.
